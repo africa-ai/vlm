@@ -9,10 +9,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Union
 import asyncio
+import io
+import base64
 
 from llm.parser.main import DictionaryParser
 from llm.parser.schemas import DictionaryEntry
 from llm.config import load_config_from_env, VLMConfig
+from llm.image_preprocessor import optimize_image_for_vlm
 from vllm_server.client import VLLMClient, SyncVLLMClient
 
 logger = logging.getLogger(__name__)
@@ -53,7 +56,7 @@ class VLLMServerProcessor:
     
     def process_image(self, image_path: Union[str, Path]) -> Dict[str, Any]:
         """
-        Process a single dictionary image using vLLM server
+        Process a single dictionary image using vLLM server with preprocessing
         
         Args:
             image_path: Path to the dictionary page image
@@ -66,35 +69,48 @@ class VLLMServerProcessor:
                 raise RuntimeError("vLLM server is not available. Please start the server first.")
         
         try:
-            logger.info(f"Processing image: {image_path}")
+            logger.info(f"Processing image with preprocessing: {image_path}")
             
-            # Send image to vLLM server for analysis
-            result = self.client.analyze_dictionary_image(image_path)
+            # Preprocess and potentially split the image
+            optimized_images = optimize_image_for_vlm(str(image_path), target_tokens=30000)
             
-            if result.get("status") == "success":
-                # Parse the response to extract structured entries
-                analysis_text = result.get("analysis", "")
+            all_entries = []
+            all_responses = []
+            all_reasoning = []
+            
+            # Process each optimized image part
+            for i, image in enumerate(optimized_images):
+                logger.info(f"Processing image part {i+1}/{len(optimized_images)}")
                 
-                # Use parser to structure the response
-                entries = self.parser.parse_vlm_response(analysis_text)
+                # Convert PIL image to base64 for API
+                img_buffer = io.BytesIO()
+                image.save(img_buffer, format='PNG')
+                img_base64 = base64.b64encode(img_buffer.getvalue()).decode()
                 
-                return {
-                    "image_path": str(image_path),
-                    "entries": [entry.to_dict() if hasattr(entry, 'to_dict') else entry 
-                              for entry in entries],
-                    "raw_response": analysis_text,
-                    "reasoning": self._extract_reasoning(analysis_text),
-                    "model": result.get("model", "cosmos-reason-vlm"),
+                # Send image to vLLM server for analysis
+                result = self.client.analyze_dictionary_image_base64(img_base64)
+                
+                if result.get("status") == "success":
+                    # Parse the response to extract structured entries
+                    analysis_text = result.get("analysis", "")
+                    
+                    # Use parser to structure the response
+                    entries = self.parser.parse_vlm_response(analysis_text)
+                    all_entries.extend(entries)
+                    all_responses.append(analysis_text)
+                    all_reasoning.append(self._extract_reasoning(analysis_text))
+                else:
+                    logger.error(f"Failed to process image part {i+1}: {result.get('error', 'Unknown error')}")
+            
+            return {
+                "image_path": str(image_path),
+                "entries": [entry.to_dict() if hasattr(entry, 'to_dict') else entry 
+                          for entry in all_entries],
+                "raw_responses": all_responses,
+                "reasoning": all_reasoning,
+                "model": result.get("model", "cosmos-reason-vlm"),
+                "parts_processed": len(optimized_images),
                     "status": "success",
-                    "timestamp": datetime.now().isoformat()
-                }
-            else:
-                logger.error(f"vLLM server returned error: {result.get('error', 'Unknown error')}")
-                return {
-                    "image_path": str(image_path),
-                    "entries": [],
-                    "error": result.get("error", "Server processing failed"),
-                    "status": "error",
                     "timestamp": datetime.now().isoformat()
                 }
                 

@@ -13,16 +13,23 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 # Set CUDA library path to help vLLM find CUDA runtime
+# Detect virtual environment and use appropriate paths
+venv_path = os.environ.get("VIRTUAL_ENV")
+if venv_path:
+    base_path = f"{venv_path}/lib/python3.11/site-packages/nvidia"
+else:
+    base_path = "/usr/local/lib/python3.11/site-packages/nvidia"
+
 cuda_lib_paths = [
-    "/usr/local/lib/python3.11/site-packages/nvidia/cuda_runtime/lib",
-    "/usr/local/lib/python3.11/site-packages/nvidia/cudnn/lib",
-    "/usr/local/lib/python3.11/site-packages/nvidia/cublas/lib",
-    "/usr/local/lib/python3.11/site-packages/nvidia/cufft/lib",
-    "/usr/local/lib/python3.11/site-packages/nvidia/curand/lib",
-    "/usr/local/lib/python3.11/site-packages/nvidia/cusolver/lib",
-    "/usr/local/lib/python3.11/site-packages/nvidia/cusparse/lib",
-    "/usr/local/lib/python3.11/site-packages/nvidia/nccl/lib",
-    "/usr/local/lib/python3.11/site-packages/nvidia/nvtx/lib"
+    f"{base_path}/cuda_runtime/lib",
+    f"{base_path}/cudnn/lib", 
+    f"{base_path}/cublas/lib",
+    f"{base_path}/cufft/lib",
+    f"{base_path}/curand/lib",
+    f"{base_path}/cusolver/lib",
+    f"{base_path}/cusparse/lib",
+    f"{base_path}/nccl/lib",
+    f"{base_path}/nvtx/lib"
 ]
 
 # Add existing LD_LIBRARY_PATH
@@ -49,7 +56,7 @@ def main():
     parser = argparse.ArgumentParser(description="Start vLLM server for Cosmos-Reason1-7B")
     
     # Server configuration
-    parser.add_argument("--host", default="localhost", help="Server host")
+    parser.add_argument("--host", default="0.0.0.0", help="Server host")
     parser.add_argument("--port", type=int, default=8000, help="Server port")
     parser.add_argument("--workers", type=int, default=1, help="Number of workers")
     

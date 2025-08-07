@@ -176,6 +176,88 @@ Format the response as a structured analysis with clear identification of each e
                 "status": "error"
             }
     
+    async def analyze_dictionary_image_base64(self, 
+                                            image_base64: str,
+                                            custom_prompt: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Analyze dictionary image from base64 data with Cosmos-Reason1-7B
+        
+        Args:
+            image_base64: Base64 encoded image data
+            custom_prompt: Optional custom prompt for analysis
+            
+        Returns:
+            Dictionary with analysis results
+        """
+        if not self.session:
+            raise RuntimeError("Client session not initialized. Use async context manager.")
+        
+        # Default reasoning prompt for Kalenjin dictionary
+        default_prompt = """<reasoning>
+I need to analyze this Kalenjin dictionary page systematically to extract dictionary entries.
+
+Let me examine:
+1. The overall layout and structure of the page
+2. Individual dictionary entries with their components
+3. The format pattern for each entry (grapheme -> IPA -> English meaning)
+4. Any special formatting or organization
+
+For each dictionary entry, I should identify:
+- The Kalenjin word/grapheme (original text)
+- The IPA phonetic transcription (if present)
+- The English translation/meaning
+- Any additional linguistic information
+
+I'll organize these into structured data.
+</reasoning>
+
+Analyze this Kalenjin dictionary page image. Extract all dictionary entries with their:
+1. Original Kalenjin grapheme/word
+2. IPA phonetic transcription (if present)
+3. English meaning/translation
+
+Format the response as a structured analysis with clear identification of each entry."""
+        
+        prompt = custom_prompt or default_prompt
+        
+        try:
+            # Prepare request payload with base64 data
+            payload = {
+                "image": image_base64,
+                "prompt": prompt,
+                "max_tokens": 2048
+            }
+            
+            # Send request to vLLM server
+            async with self.session.post(
+                f"{self.server_url}/v1/vision/analyze",
+                json=payload
+            ) as response:
+                
+                if response.status == 200:
+                    result = await response.json()
+                    logger.info(f"Successfully analyzed base64 image")
+                    return {
+                        "analysis": result.get("analysis", ""),
+                        "model": result.get("model", ""),
+                        "request_id": result.get("id", ""),
+                        "status": "success"
+                    }
+                else:
+                    error_text = await response.text()
+                    logger.error(f"Analysis failed: {response.status} - {error_text}")
+                    return {
+                        "error": f"HTTP {response.status}: {error_text}",
+                        "status": "error"
+                    }
+                    
+        except Exception as e:
+            logger.error(f"Error analyzing base64 image: {e}")
+            return {
+                "error": str(e),
+                "status": "error"
+            }
+    
     async def chat_completion(self, 
                             messages: List[Dict[str, str]], 
                             max_tokens: int = 1024,
@@ -282,6 +364,15 @@ class SyncVLLMClient:
         async def _analyze():
             async with self.client as client:
                 return await client.analyze_dictionary_image(image_path, custom_prompt)
+        
+        return asyncio.run(_analyze())
+    
+    def analyze_dictionary_image_base64(self, image_base64: str, 
+                                      custom_prompt: Optional[str] = None) -> Dict[str, Any]:
+        """Synchronous base64 image analysis"""
+        async def _analyze():
+            async with self.client as client:
+                return await client.analyze_dictionary_image_base64(image_base64, custom_prompt)
         
         return asyncio.run(_analyze())
     

@@ -224,7 +224,9 @@ class VLLMServer:
             port=self.config.port,
             workers=self.config.workers,
             access_log=True,
-            log_config=None
+            log_config=None,
+            loop="asyncio",
+            server_header=False
         )
 
 
