@@ -12,6 +12,7 @@ sys.path.append(str(Path(__file__).parent))
 
 from scripts.pdf_to_images import PDFToImageConverter
 from llm.main import VLMProcessor
+from llm.vllm_processor import VLLMServerProcessor, create_vlm_processor
 from llm.config import VLMConfig, load_config_from_env
 
 def setup_logging(log_level: str = "INFO", log_file: str = None):
@@ -35,14 +36,17 @@ Examples:
   # Convert PDF to images only
   python main.py convert kalenjin_dictionary.pdf --output ./images
   
-  # Process images with VLM
+  # Process images with VLM (local)
   python main.py process ./images --output ./results
   
-  # Full pipeline: PDF -> Images -> VLM Processing
-  python main.py pipeline kalenjin_dictionary.pdf --output ./results
+  # Process images with vLLM server (recommended)
+  python main.py process ./images --output ./results --use-vllm-server
+  
+  # Full pipeline with vLLM server
+  python main.py pipeline kalenjin_dictionary.pdf --output ./results --use-vllm-server
   
   # Batch process multiple PDFs
-  python main.py batch ./pdfs --output ./results
+  python main.py batch ./pdfs --output ./results --use-vllm-server
         """
     )
     
@@ -62,6 +66,10 @@ Examples:
     process_parser.add_argument('--model', help='Model name override')
     process_parser.add_argument('--batch-size', type=int, help='Batch size')
     process_parser.add_argument('--device', help='Device (cuda/cpu)')
+    process_parser.add_argument('--use-vllm-server', action='store_true', 
+                               help='Use vLLM server instead of local model (recommended)')
+    process_parser.add_argument('--server-url', default='http://localhost:8000',
+                               help='vLLM server URL (default: http://localhost:8000)')
     
     # Pipeline command (full processing pipeline)
     pipeline_parser = subparsers.add_parser('pipeline', help='Full pipeline: PDF -> Images -> VLM')
@@ -72,6 +80,10 @@ Examples:
     pipeline_parser.add_argument('--batch-size', type=int, help='Batch size')
     pipeline_parser.add_argument('--device', help='Device (cuda/cpu)')
     pipeline_parser.add_argument('--keep-images', action='store_true', help='Keep intermediate images')
+    pipeline_parser.add_argument('--use-vllm-server', action='store_true',
+                                help='Use vLLM server instead of local model (recommended)')
+    pipeline_parser.add_argument('--server-url', default='http://localhost:8000',
+                                help='vLLM server URL (default: http://localhost:8000)')
     
     # Batch command (multiple PDFs)
     batch_parser = subparsers.add_parser('batch', help='Process multiple PDFs')
@@ -81,6 +93,10 @@ Examples:
     batch_parser.add_argument('--model', help='Model name override')
     batch_parser.add_argument('--batch-size', type=int, help='Batch size')
     batch_parser.add_argument('--device', help='Device (cuda/cpu)')
+    batch_parser.add_argument('--use-vllm-server', action='store_true',
+                             help='Use vLLM server instead of local model (recommended)')
+    batch_parser.add_argument('--server-url', default='http://localhost:8000',
+                             help='vLLM server URL (default: http://localhost:8000)')
     
     # Global options
     parser.add_argument('--log-level', default='INFO', help='Logging level')
@@ -144,9 +160,24 @@ def run_process(args):
     if args.device:
         config.device = args.device
     
-    # Initialize and run processor
-    processor = VLMProcessor(config)
-    processor.load_model()
+    # Create appropriate processor
+    use_vllm = getattr(args, 'use_vllm_server', False)
+    server_url = getattr(args, 'server_url', 'http://localhost:8000')
+    
+    if use_vllm:
+        logger.info(f"Using vLLM server at {server_url}")
+        processor = VLLMServerProcessor(config, server_url)
+        
+        # Check server connection
+        if not processor.check_server_connection():
+            logger.error("Failed to connect to vLLM server. Please ensure the server is running.")
+            logger.error(f"Expected server URL: {server_url}")
+            logger.error("To start the server, run: python start_vllm_server.py")
+            return
+    else:
+        logger.info("Using local VLM processor")
+        processor = VLMProcessor(config)
+        processor.load_model()
     
     # Get image paths
     image_dir = Path(args.image_dir)
@@ -196,8 +227,22 @@ def run_pipeline(args):
     if args.device:
         config.device = args.device
     
-    processor = VLMProcessor(config)
-    processor.load_model()
+    # Create appropriate processor
+    use_vllm = getattr(args, 'use_vllm_server', False)
+    server_url = getattr(args, 'server_url', 'http://localhost:8000')
+    
+    if use_vllm:
+        logger.info(f"Using vLLM server at {server_url}")
+        processor = VLLMServerProcessor(config, server_url)
+        
+        # Check server connection
+        if not processor.check_server_connection():
+            logger.error("Failed to connect to vLLM server. Please ensure the server is running.")
+            return
+    else:
+        logger.info("Using local VLM processor")
+        processor = VLMProcessor(config)
+        processor.load_model()
     
     results = processor.batch_process_images(image_paths)
     processor.save_results(results)
@@ -242,47 +287,61 @@ def run_batch(args):
     if args.device:
         config.device = args.device
     
-    processor = VLMProcessor(config)
-    processor.load_model()
+    # Create appropriate processor
+    use_vllm = getattr(args, 'use_vllm_server', False)
+    server_url = getattr(args, 'server_url', 'http://localhost:8000')
+    
+    if use_vllm:
+        logger.info(f"Using vLLM server at {server_url}")
+        processor = VLLMServerProcessor(config, server_url)
+        
+        # Check server connection
+        if not processor.check_server_connection():
+            logger.error("Failed to connect to vLLM server. Please ensure the server is running.")
+            return
+    else:
+        logger.info("Using local VLM processor")
+        processor = VLLMProcessor(config)
+        processor.load_model()
     
     all_results = []
     
     for pdf_file in pdf_files:
         logger.info(f"Processing {pdf_file.name}")
         
+        # Create output directory for this PDF
+        pdf_output_dir = Path(args.output) / pdf_file.stem
+        images_dir = pdf_output_dir / "images"
+        
         try:
-            # Create output directory for this PDF
-            pdf_output_dir = Path(args.output) / pdf_file.stem
-            images_dir = pdf_output_dir / "images"
-            
-            # Convert to images
+            # Convert PDF to images
             image_paths = converter.convert_pdf_to_images(str(pdf_file), str(images_dir))
             
-            # Process with VLM
+            # Process images
             config.output_dir = str(pdf_output_dir)
-            processor.config = config
-            
             results = processor.batch_process_images(image_paths)
+            
+            # Save results for this PDF
             processor.save_results(results, f"{pdf_file.stem}_extraction")
             
             all_results.extend(results)
             
-            # Cleanup images
-            import shutil
-            shutil.rmtree(images_dir)
+            # Cleanup images (optional)
+            # shutil.rmtree(images_dir)  # Uncomment to remove intermediate images
             
         except Exception as e:
-            logger.error(f"Failed to process {pdf_file.name}: {e}")
+            logger.error(f"Failed to process {pdf_file}: {e}")
     
-    # Print final summary
+    # Print overall summary
     successful = sum(1 for r in all_results if r['status'] == 'success')
     total_entries = sum(len(r['entries']) for r in all_results if r['status'] == 'success')
     
     print(f"Batch processing completed:")
-    print(f"  Processed {len(pdf_files)} PDF files")
-    print(f"  Successfully processed: {successful}/{len(all_results)} pages")
+    print(f"  PDFs processed: {len(pdf_files)}")
+    print(f"  Successfully processed images: {successful}/{len(all_results)}")
     print(f"  Total dictionary entries extracted: {total_entries}")
     print(f"  Results saved to: {args.output}")
 
+
 if __name__ == "__main__":
-    exit(main())
+    sys.exit(main())

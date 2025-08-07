@@ -1,0 +1,47 @@
+# Manifest file for Kalenjin Dictionary Processing Framework
+
+# Include documentation
+include README.md
+include VLLM_GUIDE.md
+include LICENSE
+include CHANGELOG.md
+
+# Include requirements files
+include requirements.txt
+include requirements_vllm.txt
+
+# Include configuration files
+include *.env*
+include *.cfg
+include *.ini
+include *.yaml
+include *.yml
+include *.json
+
+# Include scripts
+recursive-include scripts *.py
+recursive-include llm *.py *.json *.yaml *.yml
+recursive-include vllm_server *.py *.json *.yaml *.yml
+
+# Include startup scripts
+include start_vllm_server.py
+include start_server.bat
+include test_vllm.py
+include vllm_demo.py
+
+# Include any data files
+recursive-include data *
+recursive-include models *.json *.yaml *.yml
+
+# Exclude unnecessary files
+exclude .gitignore
+exclude .env.example
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co]
+recursive-exclude * .DS_Store
+recursive-exclude * .git*
+exclude *.log
+exclude output/*
+exclude results/*
+exclude cache/*
+exclude temp/*

@@ -77,7 +77,7 @@ class DictionaryParser:
     
     def _process_with_vlm(self, image_path: str, prompt: str) -> str:
         """
-        Process image with VLM (placeholder - called from main processor)
+        Process image with VLM (connected from main processor)
         
         Args:
             image_path: Path to image
@@ -86,11 +86,14 @@ class DictionaryParser:
         Returns:
             VLM response text
         """
-        # This method is a placeholder and will be called by the main VLM processor
-        # In practice, this would interface with the loaded model
-        
         if hasattr(self, '_vlm_processor') and self._vlm_processor:
-            return self._vlm_processor.process_image(image_path, prompt)
+            try:
+                logger.info(f"Processing {image_path} with Cosmos-Reason1-7B VLM")
+                return self._vlm_processor.process_image(image_path, prompt)
+            except Exception as e:
+                logger.error(f"VLM processing failed: {e}")
+                logger.info("Falling back to mock parsing")
+                return self._fallback_parse(image_path)
         else:
             # Fallback for testing or when VLM is not available
             logger.warning("VLM processor not available, using fallback parsing")

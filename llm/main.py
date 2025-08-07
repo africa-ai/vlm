@@ -43,6 +43,8 @@ class VLMProcessor:
         self.processor = None
         if DictionaryParser:
             self.parser = DictionaryParser(self.config)
+            # Set the VLM processor reference in the parser
+            self.parser.set_vlm_processor(self)
         else:
             logger.warning("DictionaryParser not available")
             self.parser = None
@@ -254,11 +256,13 @@ class VLMProcessor:
             batch_results = []
             for image_path in batch_paths:
                 try:
-                    # Parse dictionary entries from image
-                    entries = self.parser.parse_image(image_path)
+                    # Process image with VLM to get dictionary entries
+                    result = self.process_image(image_path)
                     batch_results.append({
                         "image_path": image_path,
-                        "entries": entries,
+                        "entries": result.get("entries", []),
+                        "raw_response": result.get("raw_response", ""),
+                        "reasoning": result.get("reasoning", ""),
                         "status": "success",
                         "timestamp": datetime.now().isoformat()
                     })

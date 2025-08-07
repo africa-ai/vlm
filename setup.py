@@ -1,11 +1,153 @@
 """
-Setup and installation helper for Kalenjin Dictionary Processing Framework
+Setup script for Kalenjin Dictionary Processing Framework with vLLM Integration
+Provides installation, configuration, and environment setup for the framework
 """
 
+from setuptools import setup, find_packages
+from pathlib import Path
 import subprocess
 import sys
 import os
-from pathlib import Path
+
+# Read the README file
+this_directory = Path(__file__).parent
+long_description = (this_directory / "README.md").read_text(encoding='utf-8') if (this_directory / "README.md").exists() else ""
+
+# Read version from package
+__version__ = "1.0.0"
+
+# Core dependencies
+INSTALL_REQUIRES = [
+    # Core ML dependencies  
+    "torch>=2.0.0",
+    "transformers>=4.35.0",
+    "accelerate>=0.20.0",
+    
+    # Image processing
+    "pillow>=9.0.0",
+    "opencv-python>=4.7.0",
+    
+    # PDF processing
+    "PyMuPDF>=1.23.0",
+    "pdf2image>=1.16.0",
+    
+    # Data processing
+    "pandas>=1.5.0",
+    "numpy>=1.24.0",
+    
+    # Utilities
+    "jsonschema>=4.17.0",
+    "tqdm>=4.65.0",
+    "python-dotenv>=1.0.0",
+    "huggingface-hub>=0.17.0",
+    "regex>=2023.0.0",
+    "typing-extensions>=4.5.0",
+    
+    # HTTP clients for vLLM integration
+    "httpx>=0.25.0",
+    "aiohttp>=3.9.0",
+]
+
+# vLLM server dependencies (optional)
+VLLM_REQUIRES = [
+    "vllm>=0.6.0",
+    "uvicorn>=0.24.0", 
+    "fastapi>=0.104.0",
+    "pydantic>=2.5.0",
+    "python-multipart>=0.0.6",
+]
+
+# Development dependencies
+DEV_REQUIRES = [
+    "pytest>=7.0.0",
+    "black>=23.0.0", 
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+]
+
+# Extra dependencies
+EXTRAS_REQUIRE = {
+    "vllm": VLLM_REQUIRES,
+    "dev": DEV_REQUIRES,
+    "all": VLLM_REQUIRES + DEV_REQUIRES,
+}
+
+def post_install_setup():
+    """Run post-installation setup"""
+    print("\n🚀 Running post-installation setup...")
+    
+    # Check Python version
+    if not check_python_version():
+        sys.exit(1)
+    
+    # Create environment file
+    create_environment_file()
+    
+    # Setup directories
+    setup_directories()
+    
+    # Check CUDA after installation
+    check_cuda_availability()
+    
+    print("\n🎉 Setup completed successfully!")
+    print("\n📋 Next steps:")
+    print("1. Review and update .env file with your preferences")
+    print("2. For vLLM server: pip install .[vllm]")
+    print("3. Start processing: python main.py --help")
+    print("4. Test installation: python test_vllm.py")
+
+def create_environment_file():
+    """Create .env file with default configuration"""
+    env_file = Path(".env")
+    if env_file.exists():
+        print("✅ Environment file (.env) already exists")
+        return
+    
+    env_content = """# Kalenjin Dictionary Processing Framework Configuration
+
+# Model Configuration
+MODEL_NAME=nvidia/Cosmos-Reason1-7B
+DEVICE=auto
+BATCH_SIZE=2
+OUTPUT_DIR=./output
+
+# vLLM Server Configuration (optional)
+VLLM_SERVER_URL=http://localhost:8000
+VLLM_MODEL_NAME=nvidia/Cosmos-Reason1-7B
+VLLM_HOST=localhost
+VLLM_PORT=8000
+VLLM_GPU_MEMORY_UTILIZATION=0.85
+VLLM_MAX_NUM_SEQS=4
+VLLM_TENSOR_PARALLEL_SIZE=1
+
+# Logging
+LOG_LEVEL=INFO
+LOG_FILE=kalenjin_processing.log
+
+# PDF Processing  
+DEFAULT_DPI=300
+IMAGE_FORMAT=PNG
+"""
+    
+    env_file.write_text(env_content)
+    print("✅ Created environment configuration file (.env)")
+
+def setup_directories():
+    """Create necessary directories"""
+    directories = [
+        "output",
+        "images", 
+        "results",
+        "logs",
+        "cache",
+    ]
+    
+    for dir_name in directories:
+        dir_path = Path(dir_name)
+        if not dir_path.exists():
+            dir_path.mkdir(parents=True, exist_ok=True)
+            print(f"✅ Created directory: {dir_name}")
 
 def check_python_version():
     """Check if Python version is compatible"""
@@ -17,185 +159,98 @@ def check_python_version():
     print(f"✅ Python version: {version.major}.{version.minor}.{version.micro}")
     return True
 
-def check_pip():
-    """Check if pip is available"""
-    try:
-        subprocess.run([sys.executable, "-m", "pip", "--version"], 
-                      check=True, capture_output=True)
-        print("✅ pip is available")
-        return True
-    except subprocess.CalledProcessError:
-        print("❌ pip is not available")
-        return False
-
-def install_requirements():
-    """Install requirements from requirements.txt"""
-    requirements_file = Path("requirements.txt")
-    
-    if not requirements_file.exists():
-        print("❌ requirements.txt not found")
-        return False
-    
-    print("📦 Installing Python packages...")
-    try:
-        # Install basic requirements first
-        basic_cmd = [
-            sys.executable, "-m", "pip", "install", 
-            "torch", "torchvision", "--index-url", "https://download.pytorch.org/whl/cu118"
-        ]
-        subprocess.run(basic_cmd, check=True)
-        
-        # Install remaining requirements
-        cmd = [sys.executable, "-m", "pip", "install", "-r", str(requirements_file)]
-        subprocess.run(cmd, check=True)
-        print("✅ All packages installed successfully")
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"❌ Installation failed: {e}")
-        return False
-
-def check_gpu_support():
+def check_cuda_availability():
     """Check if CUDA is available"""
     try:
         import torch
         if torch.cuda.is_available():
-            device_count = torch.cuda.device_count()
-            device_name = torch.cuda.get_device_name(0) if device_count > 0 else "Unknown"
-            print(f"✅ CUDA available: {device_count} GPU(s)")
-            print(f"   Primary GPU: {device_name}")
+            gpu_count = torch.cuda.device_count()
+            gpu_name = torch.cuda.get_device_name(0) if gpu_count > 0 else "Unknown"
+            print(f"✅ CUDA available: {gpu_count} GPU(s) - {gpu_name}")
             return True
         else:
-            print("⚠️  CUDA not available - will use CPU (slower)")
+            print("⚠️  CUDA not available - CPU processing only")
             return False
     except ImportError:
-        print("⚠️  PyTorch not installed - cannot check GPU support")
+        print("⚠️  PyTorch not installed - cannot check CUDA")
         return False
 
-def create_directories():
-    """Create necessary directories"""
-    dirs = ["output", "models", "temp"]
+# Setup configuration
+setup(
+    name="kalenjin-dictionary-processor",
+    version=__version__,
+    description="AI-powered framework for processing Kalenjin dictionary PDFs using vision-language models with vLLM integration",
+    long_description=long_description,
+    long_description_content_type="text/markdown",
+    author="Kalenjin Dictionary Project",
+    author_email="contact@kalenjin-dictionary.org",
+    url="https://github.com/kalenjin-dictionary/processor",
     
-    for dirname in dirs:
-        dir_path = Path(dirname)
-        dir_path.mkdir(exist_ok=True)
-        print(f"📁 Created directory: {dirname}")
+    # Package configuration
+    packages=find_packages(exclude=["tests*"]),
+    python_requires=">=3.8",
     
-    return True
-
-def download_model(model_name="Qwen/Qwen2.5-VL-7B-Instruct"):
-    """Download the VLM model"""
-    print(f"🤖 Checking model availability: {model_name}")
+    # Dependencies
+    install_requires=INSTALL_REQUIRES,
+    extras_require=EXTRAS_REQUIRE,
     
-    try:
-        from huggingface_hub import snapshot_download
-        from transformers import AutoTokenizer
-        
-        # Check if model exists
-        print("📥 Downloading model (this may take a while)...")
-        model_path = snapshot_download(repo_id=model_name, cache_dir="./models")
-        print(f"✅ Model downloaded to: {model_path}")
-        
-        return True
-    except ImportError:
-        print("⚠️  huggingface_hub not available - model will download on first use")
-        return True
-    except Exception as e:
-        print(f"⚠️  Model download failed: {e}")
-        print("💡 Model will be downloaded automatically on first use")
-        return True
-
-def test_installation():
-    """Test if installation works"""
-    print("\n🧪 Testing installation...")
+    # Entry points
+    entry_points={
+        "console_scripts": [
+            "kalenjin-process=main:main",
+            "start-vllm-server=start_vllm_server:main",
+            "test-vllm=test_vllm:main",
+            "kalenjin-setup=setup:post_install_setup",
+        ],
+    },
     
-    # Test PDF processing
-    try:
-        from scripts.pdf_to_images import PDFToImageConverter
-        converter = PDFToImageConverter()
-        print("✅ PDF processing module works")
-    except Exception as e:
-        print(f"❌ PDF processing test failed: {e}")
-        return False
+    # Package data
+    include_package_data=True,
+    package_data={
+        "": ["*.md", "*.txt", "*.json", "*.yaml", "*.yml", "*.cfg", "*.ini"],
+        "llm": ["*.json", "*.yaml", "*.yml"],
+        "vllm_server": ["*.json", "*.yaml", "*.yml"],
+        "scripts": ["*.py"],
+    },
     
-    # Test VLM imports
-    try:
-        from llm.config import VLMConfig
-        from llm.main import VLMProcessor
-        config = VLMConfig()
-        print("✅ VLM modules work")
-    except Exception as e:
-        print(f"❌ VLM modules test failed: {e}")
-        return False
+    # Classifiers
+    classifiers=[
+        "Development Status :: 4 - Beta",
+        "Intended Audience :: Developers",
+        "Intended Audience :: Science/Research", 
+        "Intended Audience :: Education",
+        "License :: OSI Approved :: MIT License",
+        "Operating System :: OS Independent", 
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
+        "Topic :: Scientific/Engineering :: Artificial Intelligence",
+        "Topic :: Text Processing :: Linguistic",
+        "Topic :: Multimedia :: Graphics :: Graphics Conversion",
+    ],
     
-    # Test parser
-    try:
-        from llm.parser.schemas import DictionaryEntry
-        entry = DictionaryEntry(grapheme="test")
-        print("✅ Parser modules work")
-    except Exception as e:
-        print(f"❌ Parser modules test failed: {e}")
-        return False
+    # Keywords
+    keywords=[
+        "kalenjin", "dictionary", "nlp", "vision-language-model", 
+        "pdf-processing", "linguistics", "ai", "vllm", "cuda",
+    ],
     
-    print("✅ All tests passed!")
-    return True
-
-def main():
-    """Main setup function"""
-    print("🚀 Kalenjin Dictionary Processing Framework Setup\n")
+    # Project URLs
+    project_urls={
+        "Bug Reports": "https://github.com/kalenjin-dictionary/processor/issues",
+        "Source": "https://github.com/kalenjin-dictionary/processor",
+        "Documentation": "https://github.com/kalenjin-dictionary/processor/blob/main/README.md",
+        "vLLM Guide": "https://github.com/kalenjin-dictionary/processor/blob/main/VLLM_GUIDE.md",
+    },
     
-    # Check prerequisites
-    if not check_python_version():
-        return 1
-    
-    if not check_pip():
-        return 1
-    
-    # Create directories
-    print("\n📁 Creating directories...")
-    create_directories()
-    
-    # Install packages
-    print("\n📦 Installing dependencies...")
-    if not install_requirements():
-        return 1
-    
-    # Check GPU support
-    print("\n🖥️  Checking hardware support...")
-    has_gpu = check_gpu_support()
-    
-    # Update environment file with GPU setting
-    env_file = Path(".env")
-    if env_file.exists():
-        with open(env_file, "r") as f:
-            content = f.read()
-        
-        if has_gpu:
-            content = content.replace("VLM_DEVICE=cpu", "VLM_DEVICE=cuda")
-            content = content.replace("CUDA_AVAILABLE=false", "CUDA_AVAILABLE=true")
-        else:
-            content = content.replace("VLM_DEVICE=cuda", "VLM_DEVICE=cpu")
-        
-        with open(env_file, "w") as f:
-            f.write(content)
-    
-    # Download model (optional)
-    if input("\n🤖 Download VLM model now? (y/N): ").lower().startswith('y'):
-        download_model()
-    else:
-        print("⏭️  Skipping model download (will download on first use)")
-    
-    # Test installation
-    if not test_installation():
-        print("\n❌ Setup completed with errors")
-        return 1
-    
-    print("\n🎉 Setup completed successfully!")
-    print("\n📋 Next steps:")
-    print("1. Place your Kalenjin dictionary PDF in the project root")
-    print("2. Run demo: python demo.py")
-    print("3. Or run full pipeline: python main.py pipeline your_dictionary.pdf")
-    
-    return 0
+    # Additional metadata
+    license="MIT",
+    platforms=["any"],
+    zip_safe=False,
+)
 
 if __name__ == "__main__":
-    exit(main())
+    post_install_setup()

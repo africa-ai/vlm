@@ -1,0 +1,49 @@
+# vLLM requirements for serving NVIDIA Cosmos-Reason1-7B
+vllm>=0.6.0
+uvicorn>=0.24.0
+fastapi>=0.104.0
+pydantic>=2.5.0
+python-multipart>=0.0.6
+
+# Core dependencies for NVIDIA Cosmos-Reason1-7B VLM processing
+torch>=2.0.0
+transformers>=4.35.0
+accelerate>=0.20.0
+
+# Image processing
+pillow>=9.0.0
+opencv-python>=4.7.0
+
+# PDF processing
+PyMuPDF>=1.23.0
+pdf2image>=1.16.0
+
+# Data processing and storage
+pandas>=1.5.0
+numpy>=1.24.0
+
+# JSON schema validation
+jsonschema>=4.17.0
+
+# Logging and utilities
+tqdm>=4.65.0
+python-dotenv>=1.0.0
+
+# Hugging Face Hub for model downloads
+huggingface-hub>=0.17.0
+
+# Additional utilities for reasoning model
+regex>=2023.0.0
+typing-extensions>=4.5.0
+
+# HTTP client for API calls
+httpx>=0.25.0
+aiohttp>=3.9.0
+
+# Optional GPU acceleration
+# flash-attn>=2.0.0  # Uncomment if using Flash Attention
+
+# Development and testing
+pytest>=7.0.0
+black>=23.0.0
+isort>=5.12.0
