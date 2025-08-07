@@ -4,12 +4,36 @@ vLLM Server Startup Script for NVIDIA Cosmos-Reason1-7B
 """
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
 # Add project root to Python path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
+
+# Set CUDA library path to help vLLM find CUDA runtime
+cuda_lib_paths = [
+    "/usr/local/lib/python3.11/site-packages/nvidia/cuda_runtime/lib",
+    "/usr/local/lib/python3.11/site-packages/nvidia/cudnn/lib",
+    "/usr/local/lib/python3.11/site-packages/nvidia/cublas/lib",
+    "/usr/local/lib/python3.11/site-packages/nvidia/cufft/lib",
+    "/usr/local/lib/python3.11/site-packages/nvidia/curand/lib",
+    "/usr/local/lib/python3.11/site-packages/nvidia/cusolver/lib",
+    "/usr/local/lib/python3.11/site-packages/nvidia/cusparse/lib",
+    "/usr/local/lib/python3.11/site-packages/nvidia/nccl/lib",
+    "/usr/local/lib/python3.11/site-packages/nvidia/nvtx/lib"
+]
+
+# Add existing LD_LIBRARY_PATH
+existing_path = os.environ.get("LD_LIBRARY_PATH", "")
+all_paths = [p for p in cuda_lib_paths if Path(p).exists()]
+if existing_path:
+    all_paths.append(existing_path)
+
+if all_paths:
+    os.environ["LD_LIBRARY_PATH"] = ":".join(all_paths)
+    print(f"Set LD_LIBRARY_PATH: {os.environ['LD_LIBRARY_PATH']}")
 
 try:
     from vllm_server.config import VLLMServerConfig, create_vllm_env_file

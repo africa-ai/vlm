@@ -10,10 +10,10 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional, Union
 import asyncio
 
-from ..parser.main import DictionaryParser
-from ..parser.schemas import DictionaryEntry
-from .config import load_config_from_env, VLMConfig
-from ..vllm_server.client import VLLMClient, SyncVLLMClient
+from llm.parser.main import DictionaryParser
+from llm.parser.schemas import DictionaryEntry
+from llm.config import load_config_from_env, VLMConfig
+from vllm_server.client import VLLMClient, SyncVLLMClient
 
 logger = logging.getLogger(__name__)
 
