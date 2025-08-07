@@ -8,39 +8,56 @@ import json
 class PromptTemplates:
     """Collection of prompt templates for different extraction tasks"""
     
-    # Base system prompt for dictionary extraction
-    SYSTEM_PROMPT = """You are an expert linguist and OCR specialist focused on extracting dictionary entries from Kalenjin language documents. 
+    # Base system prompt for dictionary extraction with reasoning
+    SYSTEM_PROMPT = """You are Cosmos-Reason1-7B, a powerful reasoning model specialized in visual analysis and linguistic extraction. 
 
-Your task is to:
-1. Identify and extract dictionary entries from the image
-2. For each entry, extract:
-   - Grapheme: The original Kalenjin word/spelling
-   - IPA: International Phonetic Alphabet transcription (if present)
-   - English meaning: Translation or definition in English
-   - Part of speech: Grammatical category (noun, verb, adjective, etc.)
-   - Context: Usage examples or contextual information
+Your task is to analyze Kalenjin dictionary images with systematic reasoning:
 
-Be precise and accurate. If you're uncertain about any field, leave it empty rather than guessing.
-Output the results in valid JSON format following the specified schema."""
+<reasoning>
+I will approach this task step by step:
+1. First, I'll scan the image to identify the overall structure and layout
+2. Then, I'll identify individual dictionary entries
+3. For each entry, I'll extract the components: grapheme, IPA, meaning, part of speech
+4. Finally, I'll format the results in structured JSON
+</reasoning>
+
+Focus on extracting:
+- Grapheme: The original Kalenjin word/spelling
+- IPA: International Phonetic Alphabet transcription (in /slashes/)
+- English meaning: Translation or definition in English
+- Part of speech: Grammatical category (v.t., v.i., n., adj., etc.)
+- Context: Usage examples or contextual information
+
+Be systematic, accurate, and thorough in your analysis."""
     
-    # Main extraction prompt
-    EXTRACTION_PROMPT = """Please analyze this Kalenjin dictionary page image and extract all dictionary entries you can see.
+    # Main extraction prompt optimized for Cosmos-Reason1-7B
+    EXTRACTION_PROMPT = """<reasoning>
+Let me systematically analyze this Kalenjin dictionary page:
 
-This dictionary follows a specific format:
-- Each entry starts with a Kalenjin word (grapheme)
-- Followed by part of speech abbreviations (v.t., n., adj., etc.)
-- IPA transcriptions are in forward slashes /like-this/
-- English definitions follow after the IPA
-- Some entries have cross-references and usage examples
+1. I'll examine the layout - typically two columns with alphabetical entries
+2. Each entry follows the pattern: Kalenjin_word + grammar_info + IPA + English_definition + examples
+3. I need to identify IPA transcriptions (in /forward slashes/ or _underscores_)
+4. Grammar abbreviations include v.t. (transitive verb), v.i. (intransitive verb), n. (noun), etc.
+5. I'll extract cross-references and usage examples for context
+</reasoning>
 
-For each entry, identify:
+Please analyze this Kalenjin dictionary page image and extract ALL visible dictionary entries.
+
+The dictionary format includes:
+- **Entry structure**: `grapheme + part_of_speech + IPA + definition + context`
+- **IPA notations**: Forward slashes `/ke:-apus/` and underscores `/_apa/`
+- **POS abbreviations**: `v.t.` (transitive verb), `v.i.` (intransitive verb), `n.` (noun), etc.
+- **Cross-references**: Capitalized related entries (e.g., "Kogiabus")
+- **Usage examples**: Questions and contextual sentences
+
+For each entry, extract:
 - **Grapheme**: The main Kalenjin word (e.g., "abus", "abaita")
 - **IPA**: Phonetic transcription (e.g., "/ke:-apus/", "/_apay-ta/")
 - **English meaning**: The English definition or translation
 - **Part of speech**: Grammar category (v.t., v.i., n., adj., etc.)
 - **Context**: Any usage examples, cross-references, or additional notes
 
-Return the results as a JSON array:
+Return a comprehensive JSON array:
 ```json
 [
   {
@@ -54,7 +71,7 @@ Return the results as a JSON array:
 ]
 ```
 
-Extract ALL visible entries from both columns. If any field is unclear, use null."""
+Extract ALL visible entries from both columns. Use systematic reasoning to ensure completeness and accuracy."""
     
     # Focused extraction for specific fields
     GRAPHEME_FOCUS_PROMPT = """Focus specifically on identifying Kalenjin words (graphemes) in this dictionary image. 

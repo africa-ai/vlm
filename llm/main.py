@@ -11,13 +11,14 @@ from datetime import datetime
 
 try:
     import torch
-    from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
+    from transformers import AutoModelForVision2Seq, AutoProcessor, AutoTokenizer
     from PIL import Image
     TRANSFORMERS_AVAILABLE = True
 except ImportError:
     TRANSFORMERS_AVAILABLE = False
 
 from .config import VLMConfig, load_config_from_env
+from .cosmos_utils import cosmos_processor
 try:
     from .parser.main import DictionaryParser
 except ImportError:
@@ -67,16 +68,20 @@ class VLMProcessor:
         logger.info(f"Loading model: {self.config.model_name}")
         
         try:
-            # Load processor
+            # Load processor and tokenizer for Cosmos-Reason1-7B
             self.processor = AutoProcessor.from_pretrained(
                 self.config.model_name,
-                trust_remote_code=self.config.trust_remote_code,
-                cache_dir=self.config.model_cache_dir
+                trust_remote_code=self.config.trust_remote_code
             )
             
-            # Load model
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                self.config.model_name,
+                trust_remote_code=self.config.trust_remote_code
+            )
+            
+            # Load model using AutoModelForVision2Seq for vision-language tasks
             model_kwargs = self.config.get_model_kwargs()
-            self.model = Qwen2VLForConditionalGeneration.from_pretrained(
+            self.model = AutoModelForVision2Seq.from_pretrained(
                 self.config.model_name,
                 **model_kwargs
             )
@@ -85,15 +90,42 @@ class VLMProcessor:
             if model_kwargs.get("device_map") is None:
                 self.model = self.model.to(self.config.device)
             
-            logger.info("Model loaded successfully")
+            # Set model to evaluation mode
+            self.model.eval()
+            
+            logger.info(f"Cosmos-Reason1-7B model loaded successfully on {self.config.device}")
             
         except Exception as e:
             logger.error(f"Failed to load model: {e}")
-            raise
+            # Try fallback approach
+            logger.info("Trying alternative loading method...")
+            try:
+                from transformers import AutoModel
+                
+                self.processor = AutoProcessor.from_pretrained(
+                    self.config.model_name,
+                    trust_remote_code=True
+                )
+                
+                self.model = AutoModel.from_pretrained(
+                    self.config.model_name,
+                    trust_remote_code=True,
+                    torch_dtype=self.config.torch_dtype,
+                    device_map="auto" if self.config.device == "cuda" else None
+                )
+                
+                if self.config.device == "cpu":
+                    self.model = self.model.to("cpu")
+                
+                logger.info("Model loaded with fallback method")
+                
+            except Exception as e2:
+                logger.error(f"Fallback loading also failed: {e2}")
+                raise
     
     def process_image(self, image_path: str, prompt: str) -> str:
         """
-        Process a single image with the VLM
+        Process a single image with the Cosmos-Reason1-7B VLM
         
         Args:
             image_path: Path to the image file
@@ -109,34 +141,93 @@ class VLMProcessor:
             # Load and process image
             image = Image.open(image_path).convert(self.config.image_format)
             
-            # Prepare inputs
-            inputs = self.processor(
-                text=prompt,
-                images=image,
-                return_tensors="pt"
+            # Create structured prompt for reasoning model using Cosmos utilities
+            enhanced_prompt = cosmos_processor.enhance_prompt_with_reasoning(
+                prompt, 'systematic_analysis'
             )
             
-            # Move inputs to device
-            inputs = {k: v.to(self.config.device) for k, v in inputs.items()}
-            
-            # Generate response
-            with torch.no_grad():
-                outputs = self.model.generate(
-                    **inputs,
-                    **self.config.get_generation_kwargs()
+            # Process with Cosmos-Reason1-7B
+            try:
+                # Try the standard vision-language approach
+                inputs = self.processor(
+                    text=enhanced_prompt,
+                    images=image,
+                    return_tensors="pt",
+                    padding=True
                 )
-            
-            # Decode response
-            response = self.processor.decode(
-                outputs[0],
-                skip_special_tokens=True
-            )
-            
-            # Remove the input prompt from response
-            if prompt in response:
-                response = response.replace(prompt, "").strip()
-            
-            return response
+                
+                # Move inputs to device
+                inputs = {k: v.to(self.config.device) if hasattr(v, 'to') else v for k, v in inputs.items()}
+                
+                # Generate response with reasoning capabilities
+                with torch.no_grad():
+                    outputs = self.model.generate(
+                        **inputs,
+                        max_new_tokens=self.config.max_new_tokens,
+                        temperature=self.config.temperature,
+                        top_p=self.config.top_p,
+                        do_sample=self.config.do_sample,
+                        pad_token_id=self.processor.tokenizer.eos_token_id,
+                        eos_token_id=self.processor.tokenizer.eos_token_id,
+                    )
+                
+                # Decode response
+                response = self.processor.decode(
+                    outputs[0], 
+                    skip_special_tokens=True
+                )
+                
+                # Clean up response (remove input prompt)
+                if enhanced_prompt in response:
+                    response = response.replace(enhanced_prompt, "").strip()
+                
+                # Process response using Cosmos utilities
+                formatted_result = cosmos_processor.format_cosmos_response(response, image_path)
+                
+                # Return the processed response text for compatibility
+                return response
+                
+            except Exception as e:
+                logger.warning(f"Standard processing failed, trying alternative: {e}")
+                
+                # Alternative approach using tokenizer directly
+                if hasattr(self, 'tokenizer') and self.tokenizer:
+                    # Encode text
+                    text_inputs = self.tokenizer(
+                        enhanced_prompt, 
+                        return_tensors="pt", 
+                        padding=True
+                    ).to(self.config.device)
+                    
+                    # Process image separately if needed
+                    if hasattr(self.processor, 'image_processor'):
+                        image_inputs = self.processor.image_processor(
+                            image, 
+                            return_tensors="pt"
+                        ).to(self.config.device)
+                        
+                        # Combine inputs
+                        combined_inputs = {**text_inputs, **image_inputs}
+                    else:
+                        combined_inputs = text_inputs
+                    
+                    with torch.no_grad():
+                        outputs = self.model.generate(
+                            **combined_inputs,
+                            max_new_tokens=self.config.max_new_tokens,
+                            temperature=self.config.temperature,
+                            do_sample=True
+                        )
+                    
+                    response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+                    
+                    # Clean response
+                    if enhanced_prompt in response:
+                        response = response.replace(enhanced_prompt, "").strip()
+                    
+                    return response
+                else:
+                    raise e
             
         except Exception as e:
             logger.error(f"Failed to process image {image_path}: {e}")

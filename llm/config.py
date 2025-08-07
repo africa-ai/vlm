@@ -1,5 +1,10 @@
 """
-Configuration settings for VLM processing
+Configur    # Model settings
+    model_name: str = "nvidia/Cosmos-Reason1-7B"
+    model_cache_dir: str = "./models"
+    device: str = "cuda" if torch.cuda.is_available() else "cpu"
+    torch_dtype: torch.dtype = torch.float16
+    trust_remote_code: bool = Truesettings for VLM processing
 """
 
 import os
@@ -12,7 +17,7 @@ class VLMConfig:
     """Configuration class for Visual Language Model settings"""
     
     # Model settings
-    model_name: str = "Qwen/Qwen2.5-VL-7B-Instruct"
+    model_name: str = "nvidia/Cosmos-Reason1-7B"
     model_cache_dir: str = "./models"
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     torch_dtype: torch.dtype = torch.float16

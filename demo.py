@@ -58,15 +58,19 @@ def demo_vlm_processing(image_paths):
         from llm.main import VLMProcessor
         from llm.config import VLMConfig
         
-        # Configure VLM with conservative settings
+        # Configure VLM with Cosmos-Reason1-7B
         config = VLMConfig(
-            model_name="Qwen/Qwen2.5-VL-7B-Instruct",
+            model_name="nvidia/Cosmos-Reason1-7B",
             device="cuda" if os.environ.get("CUDA_AVAILABLE", "false").lower() == "true" else "cpu",
             batch_size=1,  # Conservative for demo
-            max_new_tokens=1024,
-            temperature=0.1,
+            max_new_tokens=2048,  # Higher for reasoning model
+            temperature=0.05,     # Very low for precise extraction
             output_dir="./demo_results"
         )
+        
+        print(f"🤖 Initializing Cosmos-Reason1-7B: {config.model_name}")
+        print(f"💻 Using device: {config.device}")
+        print("🧠 This model uses advanced reasoning for accurate extraction")
         
         print(f"🤖 Initializing VLM: {config.model_name}")
         print(f"💻 Using device: {config.device}")

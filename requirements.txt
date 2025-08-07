@@ -1,35 +1,38 @@
-# Core OCR and PDF processing
-PyMuPDF>=1.23.0
-pytesseract>=0.3.10
-Pillow>=10.0.0
-
-# Image processing
-opencv-python>=4.8.0
-numpy>=1.24.0
-
-# Data handling
-pandas>=2.0.0
-regex>=2023.0.0
-
-# VLM and AI dependencies
+# Core dependencies for NVIDIA Cosmos-Reason1-7B VLM processing
 torch>=2.0.0
 transformers>=4.35.0
 accelerate>=0.20.0
-huggingface-hub>=0.17.0
 
-# Additional utilities for VLM processing
+# Image processing
+pillow>=9.0.0
+opencv-python>=4.7.0
+
+# PDF processing
+PyMuPDF>=1.23.0
+pdf2image>=1.16.0
+
+# Data processing and storage
+pandas>=1.5.0
+numpy>=1.24.0
+
+# JSON schema validation
+jsonschema>=4.17.0
+
+# Logging and utilities
 tqdm>=4.65.0
 python-dotenv>=1.0.0
-jsonschema>=4.17.0
+
+# Hugging Face Hub for model downloads
+huggingface-hub>=0.17.0
+
+# Additional utilities for reasoning model
+regex>=2023.0.0
 typing-extensions>=4.5.0
 
-# Optional: Flash Attention for better GPU performance
+# Optional GPU acceleration
 # flash-attn>=2.0.0  # Uncomment if using Flash Attention
 
-# Optional: PDF to image conversion (alternative to PyMuPDF)
-# pdf2image>=1.16.0
-
-# Development tools
+# Development and testing
 pytest>=7.0.0
 black>=23.0.0
 isort>=5.12.0

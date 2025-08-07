@@ -1,6 +1,6 @@
 # Kalenjin Dictionary Processing Framework
 
-A comprehensive framework for extracting linguistic data from Kalenjin dictionary PDFs using Visual Language Models (VLM). This system converts PDF pages to high-resolution images and processes them with QWEN 2.5 VL-Instruct to extract:
+A comprehensive framework for extracting linguistic data from Kalenjin dictionary PDFs using **NVIDIA Cosmos-Reason1-7B** Vision Language Model. This advanced reasoning model systematically converts PDF pages to high-resolution images and processes them to extract:
 
 - **Graphemes** (original Kalenjin words/spelling)
 - **IPA** (International Phonetic Alphabet transcriptions)
@@ -68,10 +68,11 @@ Extracted:
 - Support for PNG, JPEG formats
 
 ### 🤖 VLM Processing
-- QWEN 2.5 VL-Instruct model integration
+- **NVIDIA Cosmos-Reason1-7B** model integration with advanced reasoning
+- Systematic step-by-step analysis of dictionary entries  
 - GPU acceleration with CUDA support
 - Configurable batch processing
-- Flash Attention optimization support
+- Enhanced accuracy through reasoning capabilities
 
 ### 📊 Data Extraction
 - Structured extraction of dictionary entries
