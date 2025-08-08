@@ -72,6 +72,22 @@ def main():
     parser.add_argument("--max-num-seqs", type=int, default=4,
                        help="Maximum number of sequences to process in parallel")
     
+    # Performance tuning
+    parser.add_argument("--disable-cudagraph", action="store_true",
+                       help="Disable CUDA graph for multi-GPU stability")
+    parser.add_argument("--nccl-p2p-disable", action="store_true",
+                       help="Disable NCCL P2P (set NCCL_P2P_DISABLE=1)")
+    parser.add_argument("--nccl-ib-disable", action="store_true",
+                       help="Disable NCCL IB (set NCCL_IB_DISABLE=1)")
+    parser.add_argument("--nccl-socket-ifname", type=str, default=None,
+                       help="Set NCCL_SOCKET_IFNAME (e.g., eth0)")
+    parser.add_argument("--nccl-shm-disable", action="store_true",
+                       help="Disable NCCL shared memory (NCCL_SHM_DISABLE=1)")
+    parser.add_argument("--cuda-visible-devices", type=str, default=None,
+                       help="Set CUDA_VISIBLE_DEVICES (e.g., 0,1)")
+    parser.add_argument("--pytorch-cuda-alloc-conf", type=str, default=None,
+                       help="Set PYTORCH_CUDA_ALLOC_CONF (e.g., expandable_segments:True)")
+    
     # API configuration
     parser.add_argument("--api-key", help="API key for authentication")
     parser.add_argument("--served-model-name", default="cosmos-reason-vlm",
@@ -102,7 +118,14 @@ def main():
         max_model_len=args.max_model_len,
         max_num_seqs=args.max_num_seqs,
         api_key=args.api_key,
-        served_model_name=args.served_model_name
+        served_model_name=args.served_model_name,
+        enable_cudagraph=not args.disable_cudagraph,
+        nccl_p2p_disable=args.nccl_p2p_disable,
+    nccl_ib_disable=args.nccl_ib_disable,
+    nccl_socket_ifname=args.nccl_socket_ifname,
+    nccl_shm_disable=args.nccl_shm_disable,
+    cuda_visible_devices=args.cuda_visible_devices,
+    pytorch_cuda_alloc_conf=args.pytorch_cuda_alloc_conf,
     )
     
     print("Starting vLLM server with configuration:")
@@ -113,6 +136,13 @@ def main():
     print(f"  GPU Memory: {config.gpu_memory_utilization * 100}%")
     print(f"  Max Model Length: {config.max_model_len}")
     print(f"  Max Sequences: {config.max_num_seqs}")
+    print(f"  NCCL_P2P_DISABLE: {config.nccl_p2p_disable}")
+    print(f"  NCCL_IB_DISABLE: {config.nccl_ib_disable}")
+    print(f"  NCCL_SOCKET_IFNAME: {config.nccl_socket_ifname}")
+    print(f"  NCCL_SHM_DISABLE: {config.nccl_shm_disable}")
+    print(f"  CUDA_VISIBLE_DEVICES: {config.cuda_visible_devices}")
+    print(f"  PYTORCH_CUDA_ALLOC_CONF: {config.pytorch_cuda_alloc_conf}")
+    print(f"  CUDA Graphs Enabled: {config.enable_cudagraph and config.tensor_parallel_size == 1}")
     
     # Create and run server
     try:

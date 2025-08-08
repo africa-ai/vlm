@@ -37,11 +37,19 @@ class VLLMServerConfig:
     disable_log_stats: bool = False
     disable_log_requests: bool = False
     max_log_len: int = 200
-    
+    enable_cudagraph: bool = True  # Enable CUDA graph for performance (disable for multi-GPU stability)
+    # NCCL / multi-GPU tuning
+    nccl_p2p_disable: bool = False  # Disable NCCL P2P (useful in virtualized/container envs)
+    nccl_ib_disable: bool = False   # Disable NCCL IB (when IB not available)
+    nccl_socket_ifname: Optional[str] = None  # Bind NCCL sockets to specific interface, e.g., eth0
+    nccl_shm_disable: bool = False  # Disable NCCL SHM if shared memory is constrained
+    cuda_visible_devices: Optional[str] = None  # e.g., "0,1"
+    pytorch_cuda_alloc_conf: Optional[str] = None  # e.g., "expandable_segments:True"
+
     # API configuration
     api_key: Optional[str] = None
-    served_model_name: Optional[str] = None
-    
+    served_model_name: Optional[str] = "cosmos-reason-vlm"
+
     # Resource limits
     max_concurrent_requests: int = 10
     request_timeout: float = 300.0
@@ -62,7 +70,14 @@ class VLLMServerConfig:
             api_key=os.getenv("VLLM_API_KEY"),
             served_model_name=os.getenv("VLLM_SERVED_MODEL_NAME"),
             max_concurrent_requests=int(os.getenv("VLLM_MAX_CONCURRENT_REQUESTS", "10")),
-            request_timeout=float(os.getenv("VLLM_REQUEST_TIMEOUT", "300.0"))
+            request_timeout=float(os.getenv("VLLM_REQUEST_TIMEOUT", "300.0")),
+            enable_cudagraph=os.getenv("VLLM_ENABLE_CUDAGRAPH", "false").lower() == "true",
+            nccl_p2p_disable=os.getenv("VLLM_NCCL_P2P_DISABLE", "false").lower() == "true",
+            nccl_ib_disable=os.getenv("VLLM_NCCL_IB_DISABLE", "false").lower() == "true",
+            nccl_socket_ifname=os.getenv("VLLM_NCCL_SOCKET_IFNAME"),
+            nccl_shm_disable=os.getenv("VLLM_NCCL_SHM_DISABLE", "false").lower() == "true",
+            cuda_visible_devices=os.getenv("VLLM_CUDA_VISIBLE_DEVICES"),
+            pytorch_cuda_alloc_conf=os.getenv("VLLM_PYTORCH_CUDA_ALLOC_CONF"),
         )
     
     def to_vllm_args(self) -> Dict[str, Any]:
@@ -74,7 +89,8 @@ class VLLMServerConfig:
             "max_model_len": self.max_model_len,
             "max_num_seqs": self.max_num_seqs,
             "disable_log_stats": self.disable_log_stats,
-            "disable_log_requests": self.disable_log_requests
+            "disable_log_requests": self.disable_log_requests,
+            "enable_cudagraph": self.enable_cudagraph
         }
         
         # Add vision-specific parameters
