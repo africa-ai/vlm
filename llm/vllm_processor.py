@@ -71,8 +71,10 @@ class VLLMServerProcessor:
         try:
             logger.info(f"Processing image with preprocessing: {image_path}")
             
-            # Preprocess and potentially split the image
-            optimized_images = optimize_image_for_vlm(str(image_path), target_tokens=30000)
+            # Preprocess and potentially split the image (optimized for speed)
+            optimized_images = optimize_image_for_vlm(str(image_path), target_tokens=75000)
+            
+            logger.info(f"Image split into {len(optimized_images)} part(s) for processing")
             
             all_entries = []
             all_responses = []

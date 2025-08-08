@@ -121,6 +121,19 @@ class DictionaryParser:
             }
         ]"""
     
+    def parse_vlm_response(self, response: str) -> List[Dict[str, Any]]:
+        """
+        Public method to parse VLM response and extract structured data.
+        This is the interface used by VLLMServerProcessor.
+        
+        Args:
+            response: Raw VLM response text
+            
+        Returns:
+            List of dictionary entry dictionaries
+        """
+        return self._parse_vlm_response(response)
+    
     def _parse_vlm_response(self, response: str) -> List[Dict[str, Any]]:
         """
         Parse VLM response and extract structured data

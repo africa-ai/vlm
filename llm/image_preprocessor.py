@@ -21,9 +21,9 @@ class ImagePreprocessor:
     """
     
     def __init__(self, 
-                 max_width: int = 512,  # Much smaller default
-                 max_height: int = 512,  # Much smaller default
-                 quality: int = 85,  # Lower quality
+                 max_width: int = 600,  # Increased for better quality/speed balance
+                 max_height: int = 600,  # Increased for better quality/speed balance
+                 quality: int = 85,  # Higher quality
                  enhance_text: bool = True):
         """
         Initialize image preprocessor with aggressive defaults for token reduction.
@@ -182,21 +182,21 @@ class ImagePreprocessor:
         return estimated_tokens
 
 def optimize_image_for_vlm(image_path: str, 
-                          target_tokens: int = 25000,  # Lower target for safety
-                          max_splits: int = 8) -> list[Image.Image]:  # More splits allowed
+                          target_tokens: int = 75000,  # Higher target = fewer splits
+                          max_splits: int = 2) -> list[Image.Image]:  # Max 2 splits instead of 8
     """
-    Optimize image for VLM processing by aggressive preprocessing and splitting.
+    Optimize image for VLM processing with balanced speed/quality tradeoff.
     
     Args:
         image_path: Path to input image
-        target_tokens: Target token count per image (lowered for safety)
-        max_splits: Maximum number of splits to try
+        target_tokens: Target token count per image (increased for fewer splits)
+        max_splits: Maximum number of splits to try (reduced for speed)
         
     Returns:
         List of optimized PIL Images ready for VLM processing
     """
-    # Use more aggressive preprocessing
-    preprocessor = ImagePreprocessor(max_width=400, max_height=400, quality=80)
+    # Use less aggressive preprocessing for better speed
+    preprocessor = ImagePreprocessor(max_width=600, max_height=600, quality=85)
     
     # Load and preprocess image
     image = preprocessor.preprocess_image(image_path)
@@ -206,13 +206,14 @@ def optimize_image_for_vlm(image_path: str,
     
     logger.info(f"Estimated tokens for {image_path}: {estimated_tokens}")
     
-    # Always split if over target, be more aggressive
-    if estimated_tokens > target_tokens:
+    # Only split if significantly over target
+    if estimated_tokens > target_tokens * 1.5:  # Give more headroom before splitting
         splits_needed = min(max_splits, (estimated_tokens // target_tokens) + 1)
         logger.info(f"Splitting image into {splits_needed} parts")
         images = preprocessor.split_image_vertically(image, splits_needed)
     else:
         images = [image]
+        logger.info("Processing as single image (no splitting needed)")
     
     # Log final token estimates and validate
     valid_images = []
@@ -220,8 +221,8 @@ def optimize_image_for_vlm(image_path: str,
         tokens = preprocessor.estimate_token_count(img)
         logger.info(f"Part {i+1}: {img.size}, estimated tokens: {tokens}")
         
-        # Only include images that should fit in context
-        if tokens <= target_tokens:
+        # More lenient token validation
+        if tokens <= target_tokens * 1.2:  # Allow 20% over target
             valid_images.append(img)
         else:
             logger.warning(f"Part {i+1} still too large ({tokens} tokens), skipping")
