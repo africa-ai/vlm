@@ -21,16 +21,16 @@ class ImagePreprocessor:
     """
     
     def __init__(self, 
-                 max_width: int = 1024,
-                 max_height: int = 1024,
-                 quality: int = 90,
+                 max_width: int = 512,  # Much smaller default
+                 max_height: int = 512,  # Much smaller default
+                 quality: int = 85,  # Lower quality
                  enhance_text: bool = True):
         """
-        Initialize image preprocessor.
+        Initialize image preprocessor with aggressive defaults for token reduction.
         
         Args:
-            max_width: Maximum image width in pixels
-            max_height: Maximum image height in pixels  
+            max_width: Maximum image width in pixels (reduced for lower tokens)
+            max_height: Maximum image height in pixels (reduced for lower tokens)
             quality: JPEG quality (1-100)
             enhance_text: Whether to enhance text readability
         """
@@ -157,59 +157,73 @@ class ImagePreprocessor:
     
     def estimate_token_count(self, image: Image.Image) -> int:
         """
-        Estimate approximate token count for an image.
-        Based on image dimensions and complexity.
+        Estimate approximate token count for an image based on real VLM behavior.
+        Vision models like Cosmos use much higher token counts than expected.
         
         Args:
             image: PIL Image object
             
         Returns:
-            Estimated token count
+            Estimated token count (realistic for VLM models)
         """
         width, height = image.size
         pixels = width * height
         
-        # Rough estimation: ~1 token per 100 pixels for VLM models
-        # This varies by model but gives a ballpark figure
-        estimated_tokens = pixels // 100
+        # Based on actual observations: Cosmos uses ~1000-1500 tokens per image patch
+        # A 622x1024 image (~636k pixels) generated 615k tokens
+        # This suggests ~1 token per pixel for this model!
+        
+        # Conservative estimate: 1 token per pixel for safety
+        estimated_tokens = pixels
+        
+        # Add some overhead for text tokens in the prompt
+        estimated_tokens += 2000
         
         return estimated_tokens
 
 def optimize_image_for_vlm(image_path: str, 
-                          target_tokens: int = 30000,
-                          max_splits: int = 4) -> list[Image.Image]:
+                          target_tokens: int = 25000,  # Lower target for safety
+                          max_splits: int = 8) -> list[Image.Image]:  # More splits allowed
     """
-    Optimize image for VLM processing by preprocessing and splitting if needed.
+    Optimize image for VLM processing by aggressive preprocessing and splitting.
     
     Args:
         image_path: Path to input image
-        target_tokens: Target token count per image
+        target_tokens: Target token count per image (lowered for safety)
         max_splits: Maximum number of splits to try
         
     Returns:
         List of optimized PIL Images ready for VLM processing
     """
-    preprocessor = ImagePreprocessor()
+    # Use more aggressive preprocessing
+    preprocessor = ImagePreprocessor(max_width=400, max_height=400, quality=80)
     
     # Load and preprocess image
     image = preprocessor.preprocess_image(image_path)
     
-    # Estimate token count
+    # Estimate token count with realistic calculation
     estimated_tokens = preprocessor.estimate_token_count(image)
     
     logger.info(f"Estimated tokens for {image_path}: {estimated_tokens}")
     
-    # If still too large, split the image
-    if estimated_tokens > target_tokens and max_splits > 1:
+    # Always split if over target, be more aggressive
+    if estimated_tokens > target_tokens:
         splits_needed = min(max_splits, (estimated_tokens // target_tokens) + 1)
         logger.info(f"Splitting image into {splits_needed} parts")
         images = preprocessor.split_image_vertically(image, splits_needed)
     else:
         images = [image]
     
-    # Log final token estimates
+    # Log final token estimates and validate
+    valid_images = []
     for i, img in enumerate(images):
         tokens = preprocessor.estimate_token_count(img)
         logger.info(f"Part {i+1}: {img.size}, estimated tokens: {tokens}")
+        
+        # Only include images that should fit in context
+        if tokens <= target_tokens:
+            valid_images.append(img)
+        else:
+            logger.warning(f"Part {i+1} still too large ({tokens} tokens), skipping")
     
-    return images
+    return valid_images if valid_images else [images[0]]  # Return at least one image
