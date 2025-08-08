@@ -126,7 +126,7 @@ class VLLMServerProcessor:
     
     def batch_process_images(self, image_paths: List[Union[str, Path]]) -> List[Dict[str, Any]]:
         """
-        Process multiple images using vLLM server
+        Process multiple images one by one using vLLM server (sequential processing to manage memory)
         
         Args:
             image_paths: List of image file paths
@@ -138,65 +138,43 @@ class VLLMServerProcessor:
             if not self.check_server_connection():
                 raise RuntimeError("vLLM server is not available. Please start the server first.")
         
-        logger.info(f"Starting batch processing of {len(image_paths)} images via vLLM server")
+        logger.info(f"Starting sequential processing of {len(image_paths)} images via vLLM server")
         
-        # Use async client for better performance on large batches
-        async def _batch_process():
-            async with VLLMClient(self.server_url) as async_client:
-                results = await async_client.batch_process_images(image_paths)
+        processed_results = []
+        
+        for i, image_path in enumerate(image_paths, 1):
+            logger.info(f"Processing image {i}/{len(image_paths)}: {Path(image_path).name}")
+            
+            try:
+                # Process single image using the existing process_image method
+                result = self.process_image(image_path)
+                processed_results.append(result)
                 
-                # Process each result to add structured entries
-                processed_results = []
-                for result in results:
-                    if result.get("status") == "success":
-                        # Parse the analysis to extract entries
-                        analysis_text = result.get("analysis", "")
-                        entries = self.parser.parse_vlm_response(analysis_text)
-                        
-                        processed_result = {
-                            "image_path": result.get("image_path"),
-                            "entries": [entry.to_dict() if hasattr(entry, 'to_dict') else entry 
-                                      for entry in entries],
-                            "raw_response": analysis_text,
-                            "reasoning": self._extract_reasoning(analysis_text),
-                            "model": result.get("model", "cosmos-reason-vlm"),
-                            "status": "success",
-                            "timestamp": datetime.now().isoformat()
-                        }
-                    else:
-                        processed_result = {
-                            "image_path": result.get("image_path"),
-                            "entries": [],
-                            "error": result.get("error", "Processing failed"),
-                            "status": "error",
-                            "timestamp": datetime.now().isoformat()
-                        }
+                # Log progress
+                if result.get("status") == "success":
+                    entries_count = len(result.get("entries", []))
+                    logger.info(f"✓ Image {i} processed successfully - {entries_count} entries found")
+                else:
+                    logger.error(f"✗ Image {i} failed: {result.get('error', 'Unknown error')}")
                     
-                    processed_results.append(processed_result)
-                
-                return processed_results
+            except Exception as e:
+                logger.error(f"✗ Image {i} failed with exception: {e}")
+                processed_results.append({
+                    "image_path": str(image_path),
+                    "entries": [],
+                    "error": f"Processing failed: {str(e)}",
+                    "status": "error",
+                    "timestamp": datetime.now().isoformat()
+                })
         
-        # Run async batch processing
-        try:
-            results = asyncio.run(_batch_process())
-            successful = sum(1 for r in results if r.get("status") == "success")
-            total_entries = sum(len(r.get("entries", [])) for r in results if r.get("status") == "success")
-            
-            logger.info(f"Batch processing completed: {successful}/{len(image_paths)} successful, "
-                       f"{total_entries} total entries extracted")
-            
-            return results
-            
-        except Exception as e:
-            logger.error(f"Batch processing failed: {e}")
-            # Return error results for all images
-            return [{
-                "image_path": str(path),
-                "entries": [],
-                "error": f"Batch processing failed: {str(e)}",
-                "status": "error",
-                "timestamp": datetime.now().isoformat()
-            } for path in image_paths]
+        # Calculate final statistics
+        successful = sum(1 for r in processed_results if r.get("status") == "success")
+        total_entries = sum(len(r.get("entries", [])) for r in processed_results if r.get("status") == "success")
+        
+        logger.info(f"Sequential processing completed: {successful}/{len(image_paths)} successful, "
+                   f"{total_entries} total entries extracted")
+        
+        return processed_results
     
     def _extract_reasoning(self, response_text: str) -> str:
         """Extract reasoning section from Cosmos response"""

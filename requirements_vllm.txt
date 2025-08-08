@@ -10,9 +10,9 @@ torch>=2.0.0
 transformers>=4.35.0
 accelerate>=0.20.0
 
-# Image processing
+# Image processing (headless to avoid libGL dependency)
 pillow>=9.0.0
-opencv-python>=4.7.0
+opencv-python-headless>=4.11.0
 
 # PDF processing
 PyMuPDF>=1.23.0

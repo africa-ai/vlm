@@ -25,7 +25,7 @@ INSTALL_REQUIRES = [
     
     # Image processing
     "pillow>=9.0.0",
-    "opencv-python>=4.7.0",
+    "opencv-python-headless>=4.11.0",
     
     # PDF processing
     "PyMuPDF>=1.23.0",
