@@ -38,7 +38,16 @@ class VLLMServerProcessor:
         self.output_dir = Path(config.output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
+        # Setup continuous saving
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.live_results_file = self.output_dir / f"live_results_{timestamp}.jsonl"
+        self.live_entries_file = self.output_dir / f"live_entries_{timestamp}.json"
+        self.processed_count = 0
+        self.all_entries = []
+        
         logger.info(f"VLLMServerProcessor initialized with server: {server_url}")
+        logger.info(f"Live results will be saved to: {self.live_results_file}")
+        logger.info(f"Live entries will be saved to: {self.live_entries_file}")
     
     def check_server_connection(self) -> bool:
         """Check connection to vLLM server"""
@@ -53,6 +62,42 @@ class VLLMServerProcessor:
             logger.error(f"Error checking server connection: {e}")
             self.is_connected = False
             return False
+    
+    def save_live_result(self, result: Dict[str, Any]) -> None:
+        """Save individual processing result immediately"""
+        try:
+            # Append to JSONL file (one result per line)
+            with open(self.live_results_file, 'a', encoding='utf-8') as f:
+                json.dump(result, f, ensure_ascii=False)
+                f.write('\n')
+            
+            # If successful, add entries to running collection
+            if result.get("status") == "success":
+                entries = result.get("entries", [])
+                self.all_entries.extend(entries)
+                
+                # Update the live entries file
+                with open(self.live_entries_file, 'w', encoding='utf-8') as f:
+                    json.dump({
+                        "total_entries": len(self.all_entries),
+                        "processed_images": self.processed_count,
+                        "last_updated": datetime.now().isoformat(),
+                        "entries": self.all_entries
+                    }, f, indent=2, ensure_ascii=False)
+                
+                # Log sample of new entries found
+                if entries:
+                    logger.info(f"📝 Sample entries from this image:")
+                    for i, entry in enumerate(entries[:3]):  # Show first 3 entries
+                        kalenjin = entry.get("kalenjin_word", entry.get("term", entry.get("grapheme", "")))
+                        english = entry.get("english_meaning", entry.get("definition", entry.get("english", "")))
+                        logger.info(f"  {i+1}. {kalenjin} → {english}")
+                    if len(entries) > 3:
+                        logger.info(f"  ... and {len(entries)-3} more entries")
+        
+        except Exception as e:
+            logger.error(f"Failed to save live result: {e}")
+    
     
     def process_image(self, image_path: Union[str, Path]) -> Dict[str, Any]:
         """
@@ -71,8 +116,8 @@ class VLLMServerProcessor:
         try:
             logger.info(f"Processing image with preprocessing: {image_path}")
             
-            # Preprocess and potentially split the image (optimized for speed)
-            optimized_images = optimize_image_for_vlm(str(image_path), target_tokens=75000)
+            # Preprocess and potentially split the image (aggressive for token control)
+            optimized_images = optimize_image_for_vlm(str(image_path), target_tokens=50000)
             
             logger.info(f"Image split into {len(optimized_images)} part(s) for processing")
             
@@ -128,55 +173,110 @@ class VLLMServerProcessor:
     
     def batch_process_images(self, image_paths: List[Union[str, Path]]) -> List[Dict[str, Any]]:
         """
-        Process multiple images one by one using vLLM server (sequential processing to manage memory)
-        
-        Args:
-            image_paths: List of image file paths
-            
-        Returns:
-            List of processing results
+        Process multiple images one by one with continuous saving
         """
         if not self.is_connected:
             if not self.check_server_connection():
                 raise RuntimeError("vLLM server is not available. Please start the server first.")
         
         logger.info(f"Starting sequential processing of {len(image_paths)} images via vLLM server")
+        logger.info(f"🔄 Results will be continuously saved to:")
+        logger.info(f"   📄 Live results: {self.live_results_file}")
+        logger.info(f"   📚 Live entries: {self.live_entries_file}")
         
         processed_results = []
         
         for i, image_path in enumerate(image_paths, 1):
-            logger.info(f"Processing image {i}/{len(image_paths)}: {Path(image_path).name}")
+            logger.info(f"\n🔍 Processing image {i}/{len(image_paths)}: {Path(image_path).name}")
             
             try:
                 # Process single image using the existing process_image method
                 result = self.process_image(image_path)
                 processed_results.append(result)
+                self.processed_count += 1
                 
-                # Log progress
+                # Save result immediately
+                self.save_live_result(result)
+                
+                # Log progress with stats
                 if result.get("status") == "success":
                     entries_count = len(result.get("entries", []))
-                    logger.info(f"✓ Image {i} processed successfully - {entries_count} entries found")
+                    total_entries = len(self.all_entries)
+                    logger.info(f"✅ Image {i} processed successfully")
+                    logger.info(f"   📊 This image: {entries_count} entries")
+                    logger.info(f"   📊 Total so far: {total_entries} entries from {self.processed_count} images")
                 else:
-                    logger.error(f"✗ Image {i} failed: {result.get('error', 'Unknown error')}")
+                    logger.error(f"❌ Image {i} failed: {result.get('error', 'Unknown error')}")
                     
             except Exception as e:
-                logger.error(f"✗ Image {i} failed with exception: {e}")
-                processed_results.append({
+                error_result = {
                     "image_path": str(image_path),
                     "entries": [],
                     "error": f"Processing failed: {str(e)}",
                     "status": "error",
                     "timestamp": datetime.now().isoformat()
-                })
+                }
+                processed_results.append(error_result)
+                self.processed_count += 1
+                self.save_live_result(error_result)
+                logger.error(f"❌ Image {i} failed with exception: {e}")
         
-        # Calculate final statistics
+        # Final summary
         successful = sum(1 for r in processed_results if r.get("status") == "success")
-        total_entries = sum(len(r.get("entries", [])) for r in processed_results if r.get("status") == "success")
+        total_entries = len(self.all_entries)
         
-        logger.info(f"Sequential processing completed: {successful}/{len(image_paths)} successful, "
-                   f"{total_entries} total entries extracted")
+        logger.info(f"\n🏁 Processing completed!")
+        logger.info(f"   ✅ Successful: {successful}/{len(image_paths)} images")
+        logger.info(f"   📚 Total entries extracted: {total_entries}")
+        logger.info(f"   📄 Results saved to: {self.live_results_file}")
+        logger.info(f"   📚 Entries saved to: {self.live_entries_file}")
         
         return processed_results
+    
+    def save_results(self, results: List[Dict[str, Any]], filename_prefix: str = "final_results") -> None:
+        """
+        Save final results to files (compatibility method)
+        
+        Args:
+            results: List of processing results
+            filename_prefix: Prefix for result files
+        """
+        try:
+            # Save final compiled results
+            final_results_file = self.output_dir / f"{filename_prefix}.json"
+            
+            # Extract all entries from successful results
+            all_entries = []
+            successful_results = []
+            
+            for result in results:
+                if result.get("status") == "success":
+                    successful_results.append(result)
+                    entries = result.get("entries", [])
+                    all_entries.extend(entries)
+            
+            # Save comprehensive final results
+            final_data = {
+                "summary": {
+                    "total_images_processed": len(results),
+                    "successful_images": len(successful_results),
+                    "failed_images": len(results) - len(successful_results),
+                    "total_entries_extracted": len(all_entries),
+                    "processing_completed": datetime.now().isoformat()
+                },
+                "entries": all_entries,
+                "detailed_results": results
+            }
+            
+            with open(final_results_file, 'w', encoding='utf-8') as f:
+                json.dump(final_data, f, indent=2, ensure_ascii=False)
+            
+            logger.info(f"📁 Final results saved to: {final_results_file}")
+            logger.info(f"📊 Summary: {len(all_entries)} entries from {len(successful_results)}/{len(results)} images")
+            
+        except Exception as e:
+            logger.error(f"Failed to save final results: {e}")
+    
     
     def _extract_reasoning(self, response_text: str) -> str:
         """Extract reasoning section from Cosmos response"""
