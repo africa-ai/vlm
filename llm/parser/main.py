@@ -29,8 +29,8 @@ class DictionaryParser:
         
         # Regex patterns for Kalenjin dictionary format
         self.patterns = {
-            'entry_line': r'^([a-zA-Z-]+)\s+(v\.t\.|v\.i\.|v\.|n\.|adj\.|adv\.|prep\.|conj\.|interj\.)\s*(/[^/]+/)?\s*(.+)$',
-            'ipa_pattern': r'/([^/]+)/',
+            'entry_line': r'^([a-zA-Z-]+)\s+(v\.t\.|v\.i\.|v\.|n\.|adj\.|adv\.|prep\.|conj\.|interj\.)\s*(/[^/]+/|_[^_]+_)?\s*(.+)$',
+            'ipa_pattern': r'(/[^/]+/|_[^_]+_|\[[^\]]+\])',
             'pos_pattern': r'\b(v\.t\.|v\.i\.|v\.|n\.|adj\.|adv\.|prep\.|conj\.|interj\.)\b',
             'kalenjin_word': r'\b[a-zA-Z-]{2,}\b',
             'cross_reference': r'[A-Z][a-z]+\.',
@@ -134,9 +134,59 @@ class DictionaryParser:
         """
         return self._parse_vlm_response(response)
     
+    def calculate_confidence_score(self, entry: Dict[str, Any]) -> float:
+        """
+        Calculate confidence score based on extraction quality indicators
+        
+        Args:
+            entry: Dictionary entry to evaluate
+            
+        Returns:
+            Confidence score between 0.0 and 1.0
+        """
+        score = 0.6  # Base score
+        
+        # Grapheme quality (20 points)
+        grapheme = entry.get("grapheme", "").strip()
+        if grapheme and len(grapheme) >= 2:
+            score += 0.15
+            if grapheme.isalpha() or '-' in grapheme:  # Valid Kalenjin word patterns
+                score += 0.05
+        
+        # IPA presence and quality (15 points)
+        ipa = entry.get("ipa", "")
+        if ipa:
+            score += 0.10
+            if any(marker in str(ipa) for marker in ['/', '_', '[', ']']):  # Proper IPA markers
+                score += 0.05
+        
+        # English meaning quality (20 points)
+        meaning = entry.get("english_meaning", "").strip()
+        if meaning and len(meaning) >= 5:
+            score += 0.10
+            if not any(artifact in meaning.lower() for artifact in ['"', 'null', 'json', '{']):
+                score += 0.10  # No JSON artifacts
+        
+        # Part of speech (10 points)
+        pos = entry.get("part_of_speech", "")
+        if pos and pos.strip() in ['v.t.', 'v.i.', 'n.', 'adj.', 'adv.', 'v.', 'prep.']:
+            score += 0.10
+        
+        # Context presence (10 points)
+        context = entry.get("context", "")
+        if context and len(str(context).strip()) > 3:
+            score += 0.10
+        
+        # Penalize obvious errors (-20 points)
+        if any(bad in str(entry).lower() for bad in ['entries":', '```', '"ipa":', 'null']):
+            score -= 0.20
+        
+        # Ensure score stays in valid range
+        return max(0.0, min(1.0, score))
+    
     def _parse_vlm_response(self, response: str) -> List[Dict[str, Any]]:
         """
-        Parse VLM response and extract structured data
+        Parse VLM response and extract structured data with improved JSON handling
         
         Args:
             response: Raw VLM response text
@@ -145,23 +195,225 @@ class DictionaryParser:
             List of dictionary entry dictionaries
         """
         try:
-            # Try to extract JSON from response
-            json_match = re.search(r'\[[\s\S]*\]', response)
-            if json_match:
-                json_str = json_match.group()
-                entries = json.loads(json_str)
-                return entries if isinstance(entries, list) else [entries]
+            logger.debug(f"Parsing VLM response: {response[:200]}...")
             
-            # If no JSON found, try to parse as plain text
-            return self._parse_text_response(response)
+            # Clean up the response text first
+            cleaned_response = response.strip()
             
-        except json.JSONDecodeError as e:
-            logger.warning(f"Failed to parse JSON response: {e}")
-            return self._parse_text_response(response)
+            # Try multiple JSON extraction strategies
+            json_data = None
+            
+            # Strategy 1: Look for array in ```json blocks
+            json_block_match = re.search(r'```json\s*(\[[\s\S]*?\])\s*```', cleaned_response, re.MULTILINE)
+            if json_block_match:
+                json_str = json_block_match.group(1)
+                try:
+                    json_data = json.loads(json_str)
+                    logger.debug("Successfully parsed JSON from code block")
+                except json.JSONDecodeError:
+                    pass
+            
+            # Strategy 2: Look for any array structure
+            if json_data is None:
+                array_match = re.search(r'\[[\s\S]*\]', cleaned_response)
+                if array_match:
+                    json_str = array_match.group()
+                    try:
+                        json_data = json.loads(json_str)
+                        logger.debug("Successfully parsed JSON from array match")
+                    except json.JSONDecodeError:
+                        pass
+            
+            # Strategy 3: Look for individual objects and combine them
+            if json_data is None:
+                object_matches = re.findall(r'\{[^{}]*\}', cleaned_response)
+                if object_matches:
+                    objects = []
+                    for obj_str in object_matches:
+                        try:
+                            obj = json.loads(obj_str)
+                            objects.append(obj)
+                        except json.JSONDecodeError:
+                            continue
+                    if objects:
+                        json_data = objects
+                        logger.debug(f"Successfully parsed {len(objects)} JSON objects")
+            
+            # If we found JSON data, validate and return it
+            if json_data:
+                if isinstance(json_data, list):
+                    # Filter out invalid entries (like JSON syntax fragments)
+                    valid_entries = []
+                    for entry in json_data:
+                        if self._is_valid_entry(entry):
+                            # Calculate real confidence score
+                            entry["confidence_score"] = self.calculate_confidence_score(entry)
+                            valid_entries.append(entry)
+                    
+                    logger.info(f"Extracted {len(valid_entries)} valid entries from JSON")
+                    return valid_entries
+                elif isinstance(json_data, dict):
+                    if self._is_valid_entry(json_data):
+                        json_data["confidence_score"] = self.calculate_confidence_score(json_data)
+                        return [json_data]
+            
+            # If JSON parsing failed, try intelligent text parsing
+            logger.warning("JSON parsing failed, attempting intelligent text parsing")
+            return self._parse_text_response_intelligent(cleaned_response)
+            
         except Exception as e:
             logger.error(f"Error parsing VLM response: {e}")
             return []
     
+    def _is_valid_entry(self, entry: Dict[str, Any]) -> bool:
+        """
+        Check if an entry is a valid dictionary entry (not JSON syntax)
+        
+        Args:
+            entry: Dictionary entry to validate
+            
+        Returns:
+            True if valid dictionary entry
+        """
+        if not isinstance(entry, dict):
+            return False
+        
+        # Check for JSON syntax artifacts
+        grapheme = entry.get('grapheme', entry.get('term', entry.get('kalenjin_word', '')))
+        if not grapheme or len(grapheme) < 2:
+            return False
+        
+        # Reject JSON syntax fragments
+        json_artifacts = ['"entries":', '"ipa":', '"englishMeaning":', '"originalGrapheme":', 
+                         '```', '{', '}', '[', ']', '",', 'null']
+        
+        if any(artifact in str(grapheme) for artifact in json_artifacts):
+            return False
+        
+        # Must have some meaningful content
+        english = entry.get('english_meaning', entry.get('definition', entry.get('english', '')))
+        if not english or len(english) < 2:
+            return False
+        
+        # Reject if english meaning contains JSON artifacts
+        if any(artifact in str(english) for artifact in json_artifacts):
+            return False
+        
+        # Extract and clean IPA if present
+        if 'ipa' in entry and entry['ipa']:
+            ipa = str(entry['ipa']).strip()
+            # Clean common IPA formatting variations
+            if ipa and ipa != 'null' and not any(artifact in ipa for artifact in json_artifacts):
+                # Ensure IPA has proper formatting
+                if not (ipa.startswith('/') or ipa.startswith('_') or ipa.startswith('[')):
+                    # Try to extract IPA from the text
+                    ipa_match = re.search(self.patterns['ipa_pattern'], ipa)
+                    if ipa_match:
+                        entry['ipa'] = ipa_match.group()
+        
+        return True
+    
+    def _parse_text_response_intelligent(self, text: str) -> List[Dict[str, Any]]:
+        """
+        Intelligent plain text response parsing for dictionary entries
+        
+        Args:
+            text: Plain text response
+            
+        Returns:
+            List of parsed entries
+        """
+        entries = []
+        lines = text.strip().split('\n')
+        
+        current_entry = {}
+        
+        for line in lines:
+            line = line.strip()
+            if not line or len(line) < 3:
+                continue
+            
+            # Skip JSON artifacts
+            if any(artifact in line for artifact in ['"entries":', '```', '{', '}', 'null']):
+                continue
+            
+            # Look for dictionary entry patterns
+            # Pattern 1: "kalenjin_word - english_meaning"
+            if ' - ' in line:
+                parts = line.split(' - ', 1)
+                if len(parts) == 2 and len(parts[0].strip()) > 1:
+                    if current_entry:
+                        entries.append(current_entry)
+                    
+                    # Extract IPA from kalenjin part if present
+                    kalenjin_part = parts[0].strip()
+                    ipa_match = re.search(self.patterns['ipa_pattern'], kalenjin_part)
+                    ipa = ipa_match.group() if ipa_match else None
+                    
+                    # Clean grapheme (remove IPA if found)
+                    grapheme = kalenjin_part
+                    if ipa:
+                        grapheme = grapheme.replace(ipa, '').strip()
+                    
+                    current_entry = {
+                        'grapheme': grapheme.split()[0] if grapheme.split() else grapheme,
+                        'ipa': ipa,
+                        'english_meaning': parts[1].strip(),
+                        'confidence_score': 0.8
+                    }
+            
+            # Pattern 2: "word: definition"
+            elif ':' in line and not line.startswith('"'):
+                parts = line.split(':', 1)
+                if len(parts) == 2 and len(parts[0].strip()) > 1:
+                    if current_entry:
+                        entries.append(current_entry)
+                    
+                    # Extract IPA from kalenjin part if present
+                    kalenjin_part = parts[0].strip()
+                    ipa_match = re.search(self.patterns['ipa_pattern'], kalenjin_part)
+                    ipa = ipa_match.group() if ipa_match else None
+                    
+                    # Clean grapheme
+                    grapheme = kalenjin_part
+                    if ipa:
+                        grapheme = grapheme.replace(ipa, '').strip()
+                    
+                    current_entry = {
+                        'grapheme': grapheme.split()[0] if grapheme.split() else grapheme,
+                        'ipa': ipa,
+                        'english_meaning': parts[1].strip(),
+                        'confidence_score': 0.8
+                    }
+            
+            # Pattern 3: Traditional dictionary format "word pos /ipa/ definition"
+            else:
+                entry = self._parse_entry_line(line)
+                if entry and entry.get('grapheme') and len(entry.get('grapheme', '')) > 1:
+                    if current_entry:
+                        entries.append(current_entry)
+                    current_entry = entry
+        
+        # Add the last entry
+        if current_entry and current_entry.get('grapheme'):
+            entries.append(current_entry)
+        
+        # Filter out any remaining artifacts and add confidence scores
+        valid_entries = []
+        for entry in entries:
+            if self._is_valid_entry(entry):
+                entry["confidence_score"] = self.calculate_confidence_score(entry)
+                valid_entries.append(entry)
+        
+        # Filter out very low confidence entries (< 0.5)
+        high_confidence_entries = [
+            entry for entry in valid_entries 
+            if entry.get("confidence_score", 0) >= 0.5
+        ]
+        
+        logger.info(f"Text parsing: {len(entries)} total entries, {len(high_confidence_entries)} high-confidence entries kept")
+        return high_confidence_entries
+
     def _parse_text_response(self, text: str) -> List[Dict[str, Any]]:
         """
         Parse plain text response using regex patterns
@@ -188,7 +440,7 @@ class DictionaryParser:
     
     def _parse_entry_line(self, line: str) -> Optional[Dict[str, Any]]:
         """
-        Parse a single dictionary entry line
+        Parse a single dictionary entry line with enhanced IPA extraction
         
         Args:
             line: Text line containing dictionary entry
@@ -197,20 +449,54 @@ class DictionaryParser:
             Parsed entry dictionary or None
         """
         try:
-            # Extract IPA transcription
+            # Extract IPA transcription (multiple patterns)
             ipa_match = re.search(self.patterns['ipa_pattern'], line)
-            ipa = ipa_match.group(1) if ipa_match else None
+            ipa = ipa_match.group() if ipa_match else None
             
             # Extract part of speech
             pos_match = re.search(self.patterns['pos_pattern'], line)
-            pos = pos_match.group(1) if pos_match else None
+            pos = pos_match.group() if pos_match else None
             
             # Extract grapheme (first word, typically)
             words = line.split()
             if not words:
                 return None
             
-            grapheme = words[0]
+            grapheme = words[0].rstrip('.,;:')
+            
+            # Extract English meaning (everything after IPA and POS)
+            meaning_text = line
+            
+            # Remove grapheme from beginning
+            if grapheme in meaning_text:
+                meaning_text = meaning_text[meaning_text.index(grapheme) + len(grapheme):].strip()
+            
+            # Remove POS if present
+            if pos and pos in meaning_text:
+                meaning_text = meaning_text.replace(pos, '', 1).strip()
+            
+            # Remove IPA if present  
+            if ipa and ipa in meaning_text:
+                meaning_text = meaning_text.replace(ipa, '', 1).strip()
+            
+            # Clean up the meaning
+            meaning_text = meaning_text.strip('.,;: ')
+            
+            if not meaning_text or len(meaning_text) < 2:
+                return None
+            
+            return {
+                'grapheme': grapheme,
+                'ipa': ipa,
+                'english_meaning': meaning_text,
+                'part_of_speech': pos,
+                'context': None,
+                'confidence_score': 0.8  # Will be recalculated by confidence scorer
+            }
+            
+        except Exception as e:
+            logger.debug(f"Error parsing line '{line}': {e}")
+            return None
             
             # Remove known elements to get meaning
             clean_line = line

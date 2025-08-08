@@ -9,126 +9,277 @@ class PromptTemplates:
     """Collection of prompt templates for different extraction tasks"""
     
     # Base system prompt for dictionary extraction with reasoning
-    SYSTEM_PROMPT = """You are Cosmos-Reason1-7B, a powerful reasoning model specialized in visual analysis and linguistic extraction. 
+    SYSTEM_PROMPT = """You are Cosmos-Reason1-7B, a specialized vision-language model expert in analyzing dictionary pages and extracting linguistic data with high precision.
 
-Your task is to analyze Kalenjin dictionary images with systematic reasoning:
+Your expertise includes:
+- Recognizing dictionary formatting conventions and layouts
+- Extracting Kalenjin words with accurate spelling
+- Identifying IPA transcriptions in various formats
+- Understanding grammatical abbreviations and linguistic notation
+- Preserving semantic relationships and contextual information
 
 <reasoning>
-I will approach this task step by step:
-1. First, I'll scan the image to identify the overall structure and layout
-2. Then, I'll identify individual dictionary entries
-3. For each entry, I'll extract the components: grapheme, IPA, meaning, part of speech
-4. Finally, I'll format the results in structured JSON
+For dictionary analysis, I will:
+1. Scan the entire image systematically from top to bottom, left to right
+2. Identify column boundaries and entry separations
+3. Parse each entry's components: headword → grammar → phonetics → definition → examples
+4. Validate extracted data for linguistic consistency
+5. Format results in structured JSON with complete field coverage
 </reasoning>
 
-Focus on extracting:
-- Grapheme: The original Kalenjin word/spelling
-- IPA: International Phonetic Alphabet transcription (in /slashes/)
-- English meaning: Translation or definition in English
-- Part of speech: Grammatical category (v.t., v.i., n., adj., etc.)
-- Context: Usage examples or contextual information
-
-Be systematic, accurate, and thorough in your analysis."""
+Quality standards:
+- Extract EVERY visible dictionary entry, no matter how small
+- Preserve exact Kalenjin spelling and capitalization
+- Capture all IPA variants: /slashes/, _underscores_, [brackets]
+- Include complete English definitions, not fragments
+- Maintain grammatical accuracy for parts of speech"""
     
     # Main extraction prompt optimized for Cosmos-Reason1-7B
     EXTRACTION_PROMPT = """<reasoning>
-Let me systematically analyze this Kalenjin dictionary page:
+Analyzing this Kalenjin dictionary page systematically:
 
-1. I'll examine the layout - typically two columns with alphabetical entries
-2. Each entry follows the pattern: Kalenjin_word + grammar_info + IPA + English_definition + examples
-3. I need to identify IPA transcriptions (in /forward slashes/ or _underscores_)
-4. Grammar abbreviations include v.t. (transitive verb), v.i. (intransitive verb), n. (noun), etc.
-5. I'll extract cross-references and usage examples for context
+STEP 1: Layout Analysis
+- Dictionary pages typically have 2 columns with alphabetically ordered entries
+- Each entry follows a consistent pattern: HEADWORD + GRAMMAR + PHONETICS + DEFINITION + EXAMPLES
+- Text hierarchy: headwords are prominent, definitions follow, examples in context
+
+STEP 2: Component Recognition Patterns
+- Kalenjin headwords: Often start entries, may include hyphens (ke-word, -word)
+- Grammar codes: v.t. (transitive verb), v.i. (intransitive verb), n. (noun), adj. (adjective), adv. (adverb)
+- IPA transcriptions: /forward-slashes/, _underscores_, [square-brackets], or (parentheses)
+- English definitions: Follow grammar codes, may be lengthy explanations
+- Cross-references: Capitalized related words (Kogiabus, Keabus)
+- Examples: Often questions ("Ingoro aba?") or usage sentences
+
+STEP 3: Quality Validation
+- Verify each entry has a clear Kalenjin headword (2+ characters)
+- Ensure English definitions are meaningful (5+ characters)
+- Check phonetic transcriptions for proper formatting
+- Confirm grammar codes match standard abbreviations
 </reasoning>
 
-Please analyze this Kalenjin dictionary page image and extract ALL visible dictionary entries.
+**TASK**: Extract ALL dictionary entries from this Kalenjin dictionary page image.
 
-The dictionary format includes:
-- **Entry structure**: `grapheme + part_of_speech + IPA + definition + context`
-- **IPA notations**: Forward slashes `/ke:-apus/` and underscores `/_apa/`
-- **POS abbreviations**: `v.t.` (transitive verb), `v.i.` (intransitive verb), `n.` (noun), etc.
-- **Cross-references**: Capitalized related entries (e.g., "Kogiabus")
-- **Usage examples**: Questions and contextual sentences
+**EXTRACTION RULES**:
+1. **Completeness**: Find every single entry, including partial ones at margins
+2. **Accuracy**: Preserve exact spelling, capitalization, and punctuation
+3. **Structure**: Maintain the relationship between headword and definition
+4. **Context**: Include usage examples, cross-references, and grammatical notes
 
-For each entry, extract:
-- **Grapheme**: The main Kalenjin word (e.g., "abus", "abaita")
-- **IPA**: Phonetic transcription (e.g., "/ke:-apus/", "/_apay-ta/")
-- **English meaning**: The English definition or translation
-- **Part of speech**: Grammar category (v.t., v.i., n., adj., etc.)
-- **Context**: Any usage examples, cross-references, or additional notes
+**KALENJIN DICTIONARY FORMAT GUIDE**:
+- **Headword**: Main Kalenjin word (abus, ke-abus, -aita)
+- **Grammar**: v.t., v.i., n., adj., adv., prep., conj., interj.
+- **Phonetics**: /ke:-apus/, /_apa_/, [kεapus], (ke-apus)
+- **Definition**: Complete English translation or explanation
+- **Examples**: Usage sentences, questions, cross-references
 
-Return a comprehensive JSON array:
+**REQUIRED JSON FORMAT**:
 ```json
 [
   {
     "grapheme": "abus",
     "ipa": "/ke:-apus/",
-    "english_meaning": "to give bad advice, to fool, make a fool of",
+    "english_meaning": "to give bad advice, to fool, make a fool of someone",
     "part_of_speech": "v.t.",
-    "context": "Kogiabus. (S/he) was ill-advised, fooled",
+    "context": "Kogiabus - (S/he) was ill-advised, fooled. Usage: 'Abus kobo?' - 'Are you fooling them?'",
     "confidence_score": 0.95
+  },
+  {
+    "grapheme": "ke-abus", 
+    "ipa": "/_kεapus_/",
+    "english_meaning": "trickster, one who gives bad advice",
+    "part_of_speech": "n.",
+    "context": "Related to 'abus' (to fool). Example: 'Keabus ago' - 'That trickster'",
+    "confidence_score": 0.90
   }
 ]
 ```
 
-Extract ALL visible entries from both columns. Use systematic reasoning to ensure completeness and accuracy."""
+**CRITICAL**: Extract EVERY visible entry. Do not skip entries due to unclear text - include them with lower confidence scores. Scan both columns completely from top to bottom."""
     
     # Focused extraction for specific fields
-    GRAPHEME_FOCUS_PROMPT = """Focus specifically on identifying Kalenjin words (graphemes) in this dictionary image. 
+    GRAPHEME_FOCUS_PROMPT = """**TASK**: Extract ONLY the Kalenjin headwords from this dictionary page.
 
-Extract only the original Kalenjin words/terms, ignoring English text unless it's part of a definition.
+<reasoning>
+Focus exclusively on identifying the main Kalenjin words that serve as dictionary headwords:
+1. Scan for words at the beginning of each entry
+2. Look for Kalenjin morphological patterns (prefixes like ke-, ko-, suffixes like -aita)  
+3. Ignore English definitions and grammatical annotations
+4. Include variant forms and inflected entries
+</reasoning>
 
-Return as JSON array:
+**KALENJIN WORD PATTERNS**:
+- Simple words: abus, angul, chebo
+- Prefixed words: ke-abus, ko-angul  
+- Suffixed words: -aita, -en, -un
+- Compound words: che-abus, ngo-something
+
+**EXTRACTION RULES**:
+- Extract the EXACT spelling as shown in the dictionary
+- Include hyphens and morphological markers
+- Preserve capitalization patterns
+- Skip English words and abbreviations
+
+Return as clean JSON array:
 ```json
-[{"grapheme": "word1"}, {"grapheme": "word2"}]
+[
+  {"grapheme": "abus"},
+  {"grapheme": "ke-abus"},
+  {"grapheme": "abusiot"},
+  {"grapheme": "-aita"}
+]
 ```"""
     
-    IPA_FOCUS_PROMPT = """Look for International Phonetic Alphabet (IPA) transcriptions in this dictionary image.
+    IPA_FOCUS_PROMPT = """**TASK**: Extract phonetic transcriptions (IPA) from this Kalenjin dictionary page.
 
-IPA transcriptions are typically enclosed in forward slashes /.../ or square brackets [...].
+<reasoning>
+Phonetic transcriptions in Kalenjin dictionaries appear in multiple formats:
+1. Standard IPA in forward slashes: /ke:-apus/
+2. Underscored variants: /_apa_/, _kεapus_
+3. Square brackets: [kεapus], [ke:-apus]
+4. Parenthetical forms: (ke-apus)
+5. Mixed notation with tone markers: /kè:àpùs/
 
-Return as JSON array:
+I need to identify all these patterns and associate them with their corresponding headwords.
+</reasoning>
+
+**PHONETIC NOTATION PATTERNS**:
+- Forward slashes: `/ke:-apus/`, `/apa/`, `/keεn/`
+- Underscores: `_apa_`, `_kεapus_`, `_keεn_`
+- Square brackets: `[kεapus]`, `[ke:-apus]`
+- Parentheses: `(ke-apus)`, `(apa)`
+- Tone markers: `è`, `à`, `ò`, `ù` (grave accent = low tone)
+- Length markers: `:` (long vowel)
+
+**EXTRACTION RULES**:
+- Capture the COMPLETE phonetic transcription including all markers
+- Preserve tone and length notation exactly as shown
+- Associate each IPA with its corresponding Kalenjin headword
+- Include partial transcriptions if visible
+
+Return as JSON array with headword-IPA pairs:
 ```json
-[{"grapheme": "kalenjin_word", "ipa": "/ipa_transcription/"}]
+[
+  {"grapheme": "abus", "ipa": "/ke:-apus/"},
+  {"grapheme": "apa", "ipa": "_àpà_"},
+  {"grapheme": "chebo", "ipa": "[tʃèbò]"},
+  {"grapheme": "keen", "ipa": "(kè:èn)"}
+]
 ```"""
     
-    MEANING_FOCUS_PROMPT = """Extract English meanings and definitions for Kalenjin words in this dictionary image.
+    MEANING_FOCUS_PROMPT = """**TASK**: Extract English definitions and meanings for Kalenjin words from this dictionary page.
 
-Focus on the English translation/definition portions of each entry.
+<reasoning>
+English definitions in dictionaries follow specific patterns:
+1. They appear after the headword and grammatical information
+2. They may be comprehensive explanations or concise translations
+3. They often include multiple senses separated by semicolons or numbered
+4. They may contain usage examples and contextual information
+5. Cross-references to related words may be included
+</reasoning>
 
-Return as JSON array:
+**DEFINITION EXTRACTION PATTERNS**:
+- Primary meanings: "to give bad advice", "water", "house"
+- Multiple senses: "1. to fool; 2. to deceive; 3. to mislead"
+- Contextual usage: "used when referring to...", "especially in..."
+- Comparative forms: "more/less than...", "similar to..."
+- Cultural context: "traditional term for...", "ceremonial..."
+
+**EXTRACTION RULES**:
+- Capture COMPLETE definitions, not fragments
+- Include all numbered or separated senses
+- Preserve explanatory context and usage notes
+- Skip grammatical abbreviations (v.t., n., etc.)
+- Include cross-references when they clarify meaning
+
+Return as JSON array with headword-definition pairs:
 ```json
-[{"grapheme": "kalenjin_word", "english_meaning": "English definition"}]
+[
+  {"grapheme": "abus", "english_meaning": "to give bad advice, to fool, make a fool of someone"},
+  {"grapheme": "ke-abus", "english_meaning": "trickster, one who gives bad advice; a deceiver"},
+  {"grapheme": "apa", "english_meaning": "water (general term); any liquid for drinking"},
+  {"grapheme": "got", "english_meaning": "house, dwelling place; home (traditional structure)"}
+]
 ```"""
     
     # Quality check and validation prompt
-    VALIDATION_PROMPT = """Review the following extracted dictionary entries for accuracy and completeness:
+    VALIDATION_PROMPT = """**TASK**: Review and validate the extracted dictionary entries for accuracy and completeness.
 
+<reasoning>
+Quality validation requires checking:
+1. Linguistic accuracy - proper Kalenjin orthography and English translations
+2. Structural completeness - all required fields present
+3. Data consistency - formatting matches dictionary conventions
+4. Content integrity - no OCR errors or misinterpretations
+</reasoning>
+
+**VALIDATION CHECKLIST**:
+- ✅ Kalenjin graphemes use correct spelling and morphological markers
+- ✅ IPA transcriptions follow proper phonetic notation
+- ✅ English definitions are complete and culturally appropriate
+- ✅ Parts of speech match standard grammatical abbreviations
+- ✅ Context includes relevant usage examples or cross-references
+- ✅ No JSON artifacts or formatting errors remain
+
+**EXTRACTED DATA TO VALIDATE**:
 {extracted_data}
 
-Check for:
-1. Correct Kalenjin spelling (graphemes)
-2. Accurate IPA transcriptions (if present)
-3. Appropriate English meanings
-4. Consistent formatting
+**INSTRUCTIONS**:
+1. Review each entry for accuracy and completeness
+2. Correct any obvious errors (OCR mistakes, incomplete definitions)
+3. Standardize formatting for consistency
+4. Add missing information where possible
+5. Remove any invalid or artifact entries
 
-Return the corrected/validated entries in the same JSON format, or confirm if no changes are needed."""
+Return the validated entries in the same JSON format with confidence scores adjusted based on quality."""
     
     # Batch processing prompt
-    BATCH_PROMPT = """This is page {page_number} of a Kalenjin dictionary. Please extract all dictionary entries visible on this page.
+    BATCH_PROMPT = """**DICTIONARY PAGE EXTRACTION** - Page {page_number}
 
-Follow the standard format for each entry:
-- Grapheme (Kalenjin word)
-- IPA transcription (if available)  
-- English meaning
-- Part of speech
-- Context/examples
+<reasoning>
+This is part of a larger dictionary digitization project. I need to:
+1. Maintain consistency with previous pages
+2. Extract every visible entry regardless of clarity
+3. Preserve alphabetical ordering information
+4. Note any page-specific formatting variations
+</reasoning>
+
+**PAGE CONTEXT**: This is page {page_number} of a comprehensive Kalenjin-English dictionary.
+
+**EXTRACTION REQUIREMENTS**:
+- Extract ALL dictionary entries visible on this page
+- Maintain strict accuracy for linguistic data
+- Include partial entries that continue from previous/next pages
+- Note any special formatting or annotations
+- Preserve alphabetical sequence for quality control
+
+**STANDARD ENTRY FORMAT**:
+```json
+{{
+  "grapheme": "kalenjin_headword",
+  "ipa": "/phonetic_transcription/",
+  "english_meaning": "complete English definition with all senses",
+  "part_of_speech": "grammatical_category",
+  "context": "usage examples, cross-references, cultural notes",
+  "confidence_score": 0.85,
+  "page_number": {page_number},
+  "entry_position": "approximate location on page"
+}}
+```
+
+**QUALITY STANDARDS**:
+- Minimum 95% accuracy for headwords and definitions
+- Complete phonetic transcriptions where visible
+- Comprehensive context for cultural or technical terms
+- Clear indication of confidence level for each entry
+
+Extract every visible entry from this page systematically.
 
 Return as JSON array with all entries found on this page."""
     
     @classmethod
     def get_extraction_prompt(
-        self, 
+        cls, 
         focus: str = "complete",
         page_number: Optional[int] = None,
         custom_instructions: Optional[str] = None
@@ -145,16 +296,16 @@ Return as JSON array with all entries found on this page."""
             Formatted prompt string
         """
         base_prompts = {
-            "complete": self.EXTRACTION_PROMPT,
-            "grapheme": self.GRAPHEME_FOCUS_PROMPT,
-            "ipa": self.IPA_FOCUS_PROMPT,
-            "meaning": self.MEANING_FOCUS_PROMPT
+            "complete": cls.EXTRACTION_PROMPT,
+            "grapheme": cls.GRAPHEME_FOCUS_PROMPT,
+            "ipa": cls.IPA_FOCUS_PROMPT,
+            "meaning": cls.MEANING_FOCUS_PROMPT
         }
         
-        prompt = base_prompts.get(focus, self.EXTRACTION_PROMPT)
+        prompt = base_prompts.get(focus, cls.EXTRACTION_PROMPT)
         
         if page_number:
-            prompt = self.BATCH_PROMPT.format(page_number=page_number)
+            prompt = cls.BATCH_PROMPT.format(page_number=page_number)
         
         if custom_instructions:
             prompt += f"\n\nAdditional instructions: {custom_instructions}"
@@ -162,7 +313,7 @@ Return as JSON array with all entries found on this page."""
         return prompt
     
     @classmethod
-    def get_validation_prompt(self, extracted_data: List[Dict]) -> str:
+    def get_validation_prompt(cls, extracted_data: List[Dict]) -> str:
         """
         Get validation prompt for extracted data
         
@@ -173,16 +324,16 @@ Return as JSON array with all entries found on this page."""
             Formatted validation prompt
         """
         data_json = json.dumps(extracted_data, indent=2, ensure_ascii=False)
-        return self.VALIDATION_PROMPT.format(extracted_data=data_json)
+        return cls.VALIDATION_PROMPT.format(extracted_data=data_json)
     
     @classmethod
-    def get_system_message(self) -> str:
+    def get_system_message(cls) -> str:
         """Get the system prompt for model initialization"""
-        return self.SYSTEM_PROMPT
+        return cls.SYSTEM_PROMPT
     
     @classmethod
     def format_conversation(
-        self,
+        cls,
         user_prompt: str,
         image_path: Optional[str] = None
     ) -> List[Dict[str, any]]:
@@ -199,7 +350,7 @@ Return as JSON array with all entries found on this page."""
         messages = [
             {
                 "role": "system",
-                "content": self.get_system_message()
+                "content": cls.get_system_message()
             },
             {
                 "role": "user", 
@@ -210,7 +361,7 @@ Return as JSON array with all entries found on this page."""
         return messages
     
     @classmethod
-    def create_few_shot_examples(self) -> str:
+    def create_few_shot_examples(cls) -> str:
         """
         Create few-shot learning examples for better performance
         
