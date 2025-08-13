@@ -21,16 +21,16 @@ class ImagePreprocessor:
     """
     
     def __init__(self, 
-                 max_width: int = 300,  # Much smaller for better token control
-                 max_height: int = 300,  # Much smaller for better token control
+                 max_width: int = 800,  # Increased for better text readability
+                 max_height: int = 1000,  # Increased for dictionary pages
                  quality: int = 85,  # Higher quality
                  enhance_text: bool = True):
         """
-        Initialize image preprocessor with aggressive defaults for token reduction.
+        Initialize image preprocessor with balanced defaults for readability vs. token count.
         
         Args:
-            max_width: Maximum image width in pixels (reduced for lower tokens)
-            max_height: Maximum image height in pixels (reduced for lower tokens)
+            max_width: Maximum image width in pixels (balanced for readability)
+            max_height: Maximum image height in pixels (balanced for readability)
             quality: JPEG quality (1-100)
             enhance_text: Whether to enhance text readability
         """
@@ -182,21 +182,24 @@ class ImagePreprocessor:
         return estimated_tokens
 
 def optimize_image_for_vlm(image_path: str, 
-                          target_tokens: int = 50000,  # Much lower target for safety
-                          max_splits: int = 4) -> list[Image.Image]:  # Allow more splits
+                          target_tokens: int = 80000,  # Lower target to encourage splits
+                          max_splits: int = 4,  # Allow more splits
+                          force_split: bool = True) -> list[Image.Image]:  # Force splitting for dictionary pages
     """
-    Optimize image for VLM processing with aggressive token control.
+    Optimize image for VLM processing with balanced token control and readability.
+    For dictionary pages, force splitting for better systematic processing.
     
     Args:
         image_path: Path to input image
-        target_tokens: Target token count per image (much lower for safety)
+        target_tokens: Target token count per image (lower to encourage splits)
         max_splits: Maximum number of splits to try
+        force_split: Whether to force splitting even if under target tokens
         
     Returns:
         List of optimized PIL Images ready for VLM processing
     """
-    # Use much more aggressive preprocessing
-    preprocessor = ImagePreprocessor(max_width=300, max_height=300, quality=85)
+    # Use balanced preprocessing settings (no override)
+    preprocessor = ImagePreprocessor()  # Use default balanced settings
     
     # Load and preprocess image
     image = preprocessor.preprocess_image(image_path)
@@ -206,16 +209,19 @@ def optimize_image_for_vlm(image_path: str,
     
     logger.info(f"Estimated tokens for {image_path}: {estimated_tokens}")
     
-    # Always split if over target - be aggressive
-    if estimated_tokens > target_tokens:
-        splits_needed = min(max_splits, (estimated_tokens // target_tokens) + 1)
-        logger.info(f"Splitting image into {splits_needed} parts")
+    # Force split for dictionary pages OR if over target tokens
+    if force_split or estimated_tokens > target_tokens:
+        # For dictionary pages, always split into at least 2 parts (top/bottom)
+        # This helps the model focus on smaller sections systematically
+        min_splits = 2 if force_split else 1
+        splits_needed = max(min_splits, min(max_splits, (estimated_tokens // target_tokens) + 1))
+        logger.info(f"Splitting image into {splits_needed} parts (forced: {force_split})")
         images = preprocessor.split_image_vertically(image, splits_needed)
     else:
         images = [image]
         logger.info("Processing as single image (no splitting needed)")
     
-    # Log final token estimates and validate strictly
+    # Log final token estimates and validate
     valid_images = []
     for i, img in enumerate(images):
         tokens = preprocessor.estimate_token_count(img)

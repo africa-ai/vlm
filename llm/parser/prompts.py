@@ -34,68 +34,77 @@ Quality standards:
 - Include complete English definitions, not fragments
 - Maintain grammatical accuracy for parts of speech"""
     
-    # Main extraction prompt optimized for Cosmos-Reason1-7B
+    # Main extraction prompt optimized for Cosmos-Reason1-7B with systematic scanning
     EXTRACTION_PROMPT = """<reasoning>
 Analyzing this Kalenjin dictionary page systematically:
 
-STEP 1: Layout Analysis
-- Dictionary pages typically have 2 columns with alphabetically ordered entries
-- Each entry follows a consistent pattern: HEADWORD + GRAMMAR + PHONETICS + DEFINITION + EXAMPLES
-- Text hierarchy: headwords are prominent, definitions follow, examples in context
+MANDATORY SCANNING PROTOCOL:
+This appears to be a two-column dictionary page with many entries. I must scan methodically:
 
-STEP 2: Component Recognition Patterns
-- Kalenjin headwords: Often start entries, may include hyphens (ke-word, -word)
-- Grammar codes: v.t. (transitive verb), v.i. (intransitive verb), n. (noun), adj. (adjective), adv. (adverb)
-- IPA transcriptions: /forward-slashes/, _underscores_, [square-brackets], or (parentheses)
-- English definitions: Follow grammar codes, may be lengthy explanations
-- Cross-references: Capitalized related words (Kogiabus, Keabus)
-- Examples: Often questions ("Ingoro aba?") or usage sentences
+SCANNING SEQUENCE:
+1. **LEFT COLUMN**: Start at top-left corner, scan every line from top to bottom
+2. **RIGHT COLUMN**: Move to top-right corner, scan every line from top to bottom  
+3. **MARGINS & EDGES**: Check for partial entries at page boundaries
+4. **COMPLETENESS VERIFICATION**: Dictionary pages typically contain 20-40 entries
 
-STEP 3: Quality Validation
-- Verify each entry has a clear Kalenjin headword (2+ characters)
-- Ensure English definitions are meaningful (5+ characters)
-- Check phonetic transcriptions for proper formatting
-- Confirm grammar codes match standard abbreviations
+DICTIONARY ENTRY RECOGNITION:
+- **Kalenjin headwords**: Bold words at start of entries (abus, ke-abus, -aita)
+- **Grammar codes**: v.t. (transitive verb), v.i. (intransitive verb), n. (noun), adj. (adjective), adv. (adverb)
+- **IPA transcriptions**: /forward-slashes/, _underscores_, [square-brackets], or (parentheses)
+- **English definitions**: Follow grammar codes, complete explanations
+- **Usage examples**: Context sentences, cross-references, related words
+
+QUALITY VALIDATION:
+- Each entry must have a clear Kalenjin headword (2+ characters)
+- English definitions must be meaningful (5+ characters) 
+- Phonetic transcriptions should follow proper formatting
+- Grammar codes must match standard abbreviations
+
+COMPLETENESS CHECK:
+✓ Left column scanned completely top to bottom
+✓ Right column scanned completely top to bottom  
+✓ Page margins checked for partial entries
+✓ Extracted at least 15-20 entries (minimum for dictionary pages)
+✓ No text sections skipped or ignored
 </reasoning>
 
-**TASK**: Extract ALL dictionary entries from this Kalenjin dictionary page image.
+**SYSTEMATIC DICTIONARY PAGE EXTRACTION**
 
-**EXTRACTION RULES**:
-1. **Completeness**: Find every single entry, including partial ones at margins
-2. **Accuracy**: Preserve exact spelling, capitalization, and punctuation
-3. **Structure**: Maintain the relationship between headword and definition
-4. **Context**: Include usage examples, cross-references, and grammatical notes
+**CRITICAL INSTRUCTION**: Dictionary pages contain 20-40 entries. You must extract EVERY visible entry by scanning both columns completely. If you extract fewer than 15 entries, you have missed large sections.
 
-**KALENJIN DICTIONARY FORMAT GUIDE**:
+**SCANNING REQUIREMENT**: 
+1. **LEFT COLUMN SCAN**: Start at top-left, extract every entry moving downward
+2. **RIGHT COLUMN SCAN**: Move to top-right, extract every entry moving downward
+3. **MARGIN CHECK**: Look for partial entries at page edges
+4. **MINIMUM QUOTA**: Extract at least 15 dictionary entries per page
+
+**KALENJIN DICTIONARY FORMAT**:
 - **Headword**: Main Kalenjin word (abus, ke-abus, -aita)
 - **Grammar**: v.t., v.i., n., adj., adv., prep., conj., interj.
 - **Phonetics**: /ke:-apus/, /_apa_/, [kεapus], (ke-apus)
-- **Definition**: Complete English translation or explanation
-- **Examples**: Usage sentences, questions, cross-references
+- **Definition**: Complete English translation
+- **Context**: Usage examples, cross-references, related forms
 
-**REQUIRED JSON FORMAT**:
+**REQUIRED JSON OUTPUT**:
 ```json
 [
   {
     "grapheme": "abus",
     "ipa": "/ke:-apus/",
-    "english_meaning": "to give bad advice, to fool, make a fool of someone",
+    "english_meaning": "to give bad advice, to fool, make a fool of",
     "part_of_speech": "v.t.",
-    "context": "Kogiabus - (S/he) was ill-advised, fooled. Usage: 'Abus kobo?' - 'Are you fooling them?'",
+    "context": "Kogiabus - (S/he) was ill-advised, fooled",
     "confidence_score": 0.95
-  },
-  {
-    "grapheme": "ke-abus", 
-    "ipa": "/_kεapus_/",
-    "english_meaning": "trickster, one who gives bad advice",
-    "part_of_speech": "n.",
-    "context": "Related to 'abus' (to fool). Example: 'Keabus ago' - 'That trickster'",
-    "confidence_score": 0.90
   }
 ]
 ```
 
-**CRITICAL**: Extract EVERY visible entry. Do not skip entries due to unclear text - include them with lower confidence scores. Scan both columns completely from top to bottom."""
+**FORCED COMPLETENESS**: After extraction, verify:
+- "Did I scan both columns completely from top to bottom?"
+- "Have I extracted at least 15-20 entries as expected for dictionary pages?"
+- "Are there more entries I missed in either column?"
+
+**ABSOLUTE REQUIREMENT**: Extract EVERY visible entry. Scan the entire image systematically. Do not stop until both columns are completely processed."""
     
     # Focused extraction for specific fields
     GRAPHEME_FOCUS_PROMPT = """**TASK**: Extract ONLY the Kalenjin headwords from this dictionary page.

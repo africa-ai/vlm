@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 """
-Test Image Preprocessing for VLM Processing
-Tests the image optimization approach to reduce token usage
+Test image preprocessing to see what the model actually sees
 """
 
 import sys
@@ -11,59 +10,73 @@ from pathlib import Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-from llm.image_preprocessor import optimize_image_for_vlm, ImagePreprocessor
-import logging
+from llm.image_preprocessor import optimize_image_for_vlm
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-def test_image_preprocessing(image_path: str):
-    """Test image preprocessing on a sample image"""
+def test_preprocessing():
+    """Test preprocessing and save the result for visual inspection"""
     
-    logger.info(f"Testing image preprocessing on: {image_path}")
+    # Find the first image to test
+    images_dir = Path("results/images")
+    if not images_dir.exists():
+        print("❌ No images directory found")
+        return
+        
+    image_files = list(images_dir.glob("*.png"))[:1]  # Just test the first image
     
-    # Test 1: Basic preprocessing
-    preprocessor = ImagePreprocessor(max_width=1024, max_height=1024)
+    if not image_files:
+        print("❌ No images found")
+        return
+        
+    image_path = image_files[0]
+    print(f"🔍 Testing preprocessing on: {image_path.name}")
+    print(f"📄 Original file: {image_path}")
     
     try:
-        # Load original image
+        # Load original for comparison
         from PIL import Image
-        original_image = Image.open(image_path)
-        original_size = original_image.size
+        original = Image.open(image_path)
+        orig_width, orig_height = original.size
+        orig_pixels = orig_width * orig_height
+        orig_tokens = int(orig_pixels * 0.65)
         
-        # Estimate original token count
-        original_tokens = preprocessor.estimate_token_count(original_image)
+        print(f"📊 Original: {orig_width}x{orig_height} ({orig_pixels:,} pixels, ~{orig_tokens:,} tokens)")
         
-        logger.info(f"Original image: {original_size}, estimated tokens: {original_tokens}")
+        # Process image with current settings
+        optimized_images = optimize_image_for_vlm(str(image_path), target_tokens=100000)
         
-        # Test preprocessing
-        processed_image = preprocessor.preprocess_image(image_path)
-        processed_tokens = preprocessor.estimate_token_count(processed_image)
+        print(f"✅ Preprocessing complete!")
+        print(f"📊 Generated {len(optimized_images)} image part(s)")
         
-        logger.info(f"Processed image: {processed_image.size}, estimated tokens: {processed_tokens}")
-        logger.info(f"Token reduction: {original_tokens / processed_tokens:.1f}x")
+        # Save the preprocessed images for inspection
+        output_dir = Path("debug_output")
+        output_dir.mkdir(exist_ok=True)
         
-        # Test splitting if needed
-        if processed_tokens > 30000:
-            splits = preprocessor.split_image_vertically(processed_image, 4)
-            logger.info(f"Split into {len(splits)} parts:")
-            for i, split in enumerate(splits):
-                split_tokens = preprocessor.estimate_token_count(split)
-                logger.info(f"  Part {i+1}: {split.size}, estimated tokens: {split_tokens}")
+        total_tokens = 0
+        for i, img in enumerate(optimized_images):
+            output_path = output_dir / f"preprocessed_part_{i+1}.png"
+            img.save(output_path)
+            width, height = img.size
+            pixels = width * height
+            estimated_tokens = int(pixels * 0.65)  # Same estimation as used internally
+            total_tokens += estimated_tokens
+            
+            print(f"   Part {i+1}: {width}x{height} pixels ({pixels:,} total)")
+            print(f"           Estimated tokens: {estimated_tokens:,}")
+            print(f"           Saved to: {output_path}")
         
-        # Test full optimization pipeline
-        logger.info("\nTesting full optimization pipeline:")
-        optimized_images = optimize_image_for_vlm(image_path, target_tokens=30000)
-        
-        total_optimized_tokens = sum(preprocessor.estimate_token_count(img) for img in optimized_images)
-        logger.info(f"Optimized to {len(optimized_images)} parts, total tokens: {total_optimized_tokens}")
-        logger.info(f"Overall token reduction: {original_tokens / total_optimized_tokens:.1f}x")
-        
-        return optimized_images
-        
+        # Calculate reduction
+        reduction_factor = orig_tokens / total_tokens if total_tokens > 0 else 0
+        print(f"\n📈 Token reduction: {orig_tokens:,} → {total_tokens:,} ({reduction_factor:.1f}x smaller)")
+        print(f"\n🔍 You can now visually inspect the preprocessed images in {output_dir}")
+        print("   Check if the text is readable and the full page is captured")
+            
     except Exception as e:
-        logger.error(f"Error testing preprocessing: {e}")
-        return None
+        print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+
+if __name__ == "__main__":
+    test_preprocessing()
 
 def main():
     """Main test function"""
@@ -80,13 +93,15 @@ def main():
         return
     
     # Run tests
-    result = test_image_preprocessing(image_path)
-    
-    if result:
-        print(f"\n✅ Successfully optimized image into {len(result)} parts")
-        print("Ready for VLM processing with reduced token usage!")
-    else:
-        print("\n❌ Image preprocessing failed")
+    try:
+        result = optimize_image_for_vlm(image_path, target_tokens=100000)
+        if result:
+            print(f"\n✅ Successfully optimized image into {len(result)} parts")
+            print("Ready for VLM processing with reduced token usage!")
+        else:
+            print("\n❌ Image preprocessing failed")
+    except Exception as e:
+        print(f"\n❌ Error during image preprocessing: {e}")
 
 if __name__ == "__main__":
     main()

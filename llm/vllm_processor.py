@@ -116,8 +116,8 @@ class VLLMServerProcessor:
         try:
             logger.info(f"Processing image with preprocessing: {image_path}")
             
-            # Preprocess and potentially split the image (aggressive for token control)
-            optimized_images = optimize_image_for_vlm(str(image_path), target_tokens=50000)
+            # Split image for systematic processing (force split for better coverage)
+            optimized_images = optimize_image_for_vlm(str(image_path), target_tokens=80000, force_split=True)
             
             logger.info(f"Image split into {len(optimized_images)} part(s) for processing")
             
@@ -134,8 +134,10 @@ class VLLMServerProcessor:
                 image.save(img_buffer, format='PNG')
                 img_base64 = base64.b64encode(img_buffer.getvalue()).decode()
                 
-                # Send image to vLLM server for analysis
-                result = self.client.analyze_dictionary_image_base64(img_base64)
+                # Send image to vLLM server for analysis using our refined prompts
+                from llm.parser.prompts import PromptTemplates
+                custom_prompt = PromptTemplates.get_extraction_prompt("complete")
+                result = self.client.analyze_dictionary_image_base64(img_base64, custom_prompt=custom_prompt)
                 
                 if result.get("status") == "success":
                     # Parse the response to extract structured entries
