@@ -13,7 +13,7 @@ sys.path.insert(0, str(project_root))
 
 from llm.vllm_processor import VLLMServerProcessor
 from llm.config import load_config_from_env
-from llm.parser.prompts import KalenjinPrompts
+from llm.parser.prompts import PromptTemplates
 
 
 async def test_refined_prompts():
@@ -27,28 +27,28 @@ async def test_refined_prompts():
     print("=== Testing Refined Prompt Templates ===")
     
     # Test system prompt
-    system_prompt = KalenjinPrompts.get_system_message()
+    system_prompt = PromptTemplates.get_system_message()
     print(f"System Prompt Length: {len(system_prompt)} characters")
     print(f"System Prompt Preview: {system_prompt[:200]}...")
     
     # Test extraction prompt
-    extraction_prompt = KalenjinPrompts.get_extraction_prompt(focus="complete")
+    extraction_prompt = PromptTemplates.get_extraction_prompt(focus="complete")
     print(f"\nExtraction Prompt Length: {len(extraction_prompt)} characters")
     print(f"Extraction Prompt Preview: {extraction_prompt[:200]}...")
     
     # Test focused prompts
     for focus_type in ["grapheme", "ipa", "meaning"]:
-        focused_prompt = KalenjinPrompts.get_extraction_prompt(focus=focus_type)
+        focused_prompt = PromptTemplates.get_extraction_prompt(focus=focus_type)
         print(f"\n{focus_type.upper()} Focus Prompt Length: {len(focused_prompt)} characters")
         print(f"{focus_type.upper()} Focus Preview: {focused_prompt[:200]}...")
     
     # Test batch prompt
-    batch_prompt = KalenjinPrompts.get_extraction_prompt(focus="complete", page_number=1)
+    batch_prompt = PromptTemplates.get_extraction_prompt(focus="complete", page_number=1)
     print(f"\nBatch Prompt Length: {len(batch_prompt)} characters")
     print(f"Batch Prompt Preview: {batch_prompt[:200]}...")
     
     # Test conversation formatting
-    conversation = KalenjinPrompts.format_conversation(
+    conversation = PromptTemplates.format_conversation(
         user_prompt="Analyze this dictionary page and extract all Kalenjin entries.",
         image_path="sample.jpg"
     )
