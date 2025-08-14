@@ -1,5 +1,6 @@
 """
 Main entry point for Kalenjin Dictionary Processing Framework
+Clean PDF → Images → OCR → vLLM → JSON pipeline
 """
 
 import sys
@@ -11,8 +12,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent))
 
 from scripts.pdf_to_images import PDFToImageConverter
-from llm.main import VLMProcessor
-from llm.vllm_processor import VLLMServerProcessor, create_vlm_processor
+from llm.ocr_processor import OCRProcessor
 from llm.config import VLMConfig, load_config_from_env
 
 def setup_logging(log_level: str = "INFO", log_file: str = None):
@@ -59,29 +59,19 @@ Examples:
     convert_parser.add_argument('--dpi', type=int, default=300, help='Image resolution (DPI)')
     convert_parser.add_argument('--format', default='PNG', help='Image format')
     
-    # Process command (VLM processing of images)
-    process_parser = subparsers.add_parser('process', help='Process images with VLM')
+    # Process command (OCR + LLM processing of images)
+    process_parser = subparsers.add_parser('process', help='Process images with OCR + LLM')
     process_parser.add_argument('image_dir', help='Directory containing images')
     process_parser.add_argument('-o', '--output', default='./output', help='Output directory')
-    process_parser.add_argument('--model', help='Model name override')
-    process_parser.add_argument('--batch-size', type=int, help='Batch size')
-    process_parser.add_argument('--device', help='Device (cuda/cpu)')
-    process_parser.add_argument('--use-vllm-server', action='store_true', 
-                               help='Use vLLM server instead of local model (recommended)')
     process_parser.add_argument('--server-url', default='http://localhost:8000',
                                help='vLLM server URL (default: http://localhost:8000)')
     
     # Pipeline command (full processing pipeline)
-    pipeline_parser = subparsers.add_parser('pipeline', help='Full pipeline: PDF -> Images -> VLM')
+    pipeline_parser = subparsers.add_parser('pipeline', help='Full pipeline: PDF -> Images -> OCR -> LLM')
     pipeline_parser.add_argument('pdf_path', help='Path to PDF file')
     pipeline_parser.add_argument('-o', '--output', default='./results', help='Output directory')
     pipeline_parser.add_argument('--dpi', type=int, default=300, help='Image resolution (DPI)')
-    pipeline_parser.add_argument('--model', help='Model name override')
-    pipeline_parser.add_argument('--batch-size', type=int, help='Batch size')
-    pipeline_parser.add_argument('--device', help='Device (cuda/cpu)')
     pipeline_parser.add_argument('--keep-images', action='store_true', help='Keep intermediate images')
-    pipeline_parser.add_argument('--use-vllm-server', action='store_true',
-                                help='Use vLLM server instead of local model (recommended)')
     pipeline_parser.add_argument('--server-url', default='http://localhost:8000',
                                 help='vLLM server URL (default: http://localhost:8000)')
     
@@ -90,11 +80,6 @@ Examples:
     batch_parser.add_argument('pdf_dir', help='Directory containing PDF files')
     batch_parser.add_argument('-o', '--output', default='./batch_results', help='Output base directory')
     batch_parser.add_argument('--dpi', type=int, default=300, help='Image resolution (DPI)')
-    batch_parser.add_argument('--model', help='Model name override')
-    batch_parser.add_argument('--batch-size', type=int, help='Batch size')
-    batch_parser.add_argument('--device', help='Device (cuda/cpu)')
-    batch_parser.add_argument('--use-vllm-server', action='store_true',
-                             help='Use vLLM server instead of local model (recommended)')
     batch_parser.add_argument('--server-url', default='http://localhost:8000',
                              help='vLLM server URL (default: http://localhost:8000)')
     
@@ -145,7 +130,7 @@ def run_convert(args):
         print(f"  -> {path}")
 
 def run_process(args):
-    """Run VLM processing on images"""
+    """Run OCR + LLM processing on images"""
     logger = logging.getLogger(__name__)
     logger.info(f"Processing images from {args.image_dir}")
     
@@ -153,31 +138,16 @@ def run_process(args):
     config = load_config_from_env()
     if args.output:
         config.output_dir = args.output
-    if args.model:
-        config.model_name = args.model
-    if args.batch_size:
-        config.batch_size = args.batch_size
-    if args.device:
-        config.device = args.device
     
-    # Create appropriate processor
-    use_vllm = getattr(args, 'use_vllm_server', False)
-    server_url = getattr(args, 'server_url', 'http://localhost:8000')
+    # Create OCR processor
+    logger.info("Using OCR + vLLM pipeline")
+    processor = OCRProcessor(config)
     
-    if use_vllm:
-        logger.info(f"Using vLLM server at {server_url}")
-        processor = VLLMServerProcessor(config, server_url)
-        
-        # Check server connection
-        if not processor.check_server_connection():
-            logger.error("Failed to connect to vLLM server. Please ensure the server is running.")
-            logger.error(f"Expected server URL: {server_url}")
-            logger.error("To start the server, run: python start_vllm_server.py")
-            return
-    else:
-        logger.info("Using local VLM processor")
-        processor = VLMProcessor(config)
-        processor.load_model()
+    # Check vLLM server connection
+    if not processor.check_server_connection():
+        logger.error("Failed to connect to vLLM server. Please ensure the server is running.")
+        logger.error("To start the server, run: python start_vllm_server.py")
+        return
     
     # Get image paths
     image_dir = Path(args.image_dir)
@@ -190,7 +160,7 @@ def run_process(args):
     logger.info(f"Found {len(image_paths)} images to process")
     
     # Process images
-    results = processor.batch_process_images([str(p) for p in image_paths])
+    results = processor.process_images([str(p) for p in image_paths])
     
     # Save results
     processor.save_results(results)
@@ -216,35 +186,19 @@ def run_pipeline(args):
     converter = PDFToImageConverter(dpi=args.dpi, image_format="PNG")
     image_paths = converter.convert_pdf_to_images(args.pdf_path, str(images_dir))
     
-    # Step 2: Process with VLM
-    logger.info("Step 2: Processing with VLM")
+    # Step 2: Process with OCR + LLM
+    logger.info("Step 2: Processing with OCR + LLM")
     config = load_config_from_env()
     config.output_dir = str(output_dir)
-    if args.model:
-        config.model_name = args.model
-    if args.batch_size:
-        config.batch_size = args.batch_size
-    if args.device:
-        config.device = args.device
     
-    # Create appropriate processor
-    use_vllm = getattr(args, 'use_vllm_server', False)
-    server_url = getattr(args, 'server_url', 'http://localhost:8000')
+    processor = OCRProcessor(config)
     
-    if use_vllm:
-        logger.info(f"Using vLLM server at {server_url}")
-        processor = VLLMServerProcessor(config, server_url)
-        
-        # Check server connection
-        if not processor.check_server_connection():
-            logger.error("Failed to connect to vLLM server. Please ensure the server is running.")
-            return
-    else:
-        logger.info("Using local VLM processor")
-        processor = VLMProcessor(config)
-        processor.load_model()
+    # Check server connection
+    if not processor.check_server_connection():
+        logger.error("Failed to connect to vLLM server. Please ensure the server is running.")
+        return
     
-    results = processor.batch_process_images(image_paths)
+    results = processor.process_images(image_paths)
     processor.save_results(results)
     
     # Step 3: Cleanup (if requested)

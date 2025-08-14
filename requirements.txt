@@ -1,38 +1,28 @@
-# Core dependencies for NVIDIA Cosmos-Reason1-7B VLM processing
-torch>=2.0.0
-transformers>=4.35.0
-accelerate>=0.20.0
+# Clean OCR + LLM Pipeline Dependencies
 
-# Image processing (headless to avoid libGL dependency)
-pillow>=9.0.0
-opencv-python-headless>=4.11.0
+# OCR Dependencies
+pytesseract>=0.3.10
+Pillow>=10.0.0
 
-# PDF processing
+# PDF Processing
 PyMuPDF>=1.23.0
-pdf2image>=1.16.0
 
-# Data processing and storage
-pandas>=1.5.0
+# vLLM Server
+vllm>=0.6.0
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+
+# HTTP Client
+aiohttp>=3.9.0
+
+# Data Processing
+pandas>=2.1.0
 numpy>=1.24.0
 
-# JSON schema validation
+# JSON and Configuration
+pydantic>=2.0.0
+python-dotenv>=1.0.0
 jsonschema>=4.17.0
 
-# Logging and utilities
+# Utilities
 tqdm>=4.65.0
-python-dotenv>=1.0.0
-
-# Hugging Face Hub for model downloads
-huggingface-hub>=0.17.0
-
-# Additional utilities for reasoning model
-regex>=2023.0.0
-typing-extensions>=4.5.0
-
-# Optional GPU acceleration
-# flash-attn>=2.0.0  # Uncomment if using Flash Attention
-
-# Development and testing
-pytest>=7.0.0
-black>=23.0.0
-isort>=5.12.0
