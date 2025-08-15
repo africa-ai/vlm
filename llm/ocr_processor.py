@@ -44,15 +44,35 @@ class OCRProcessor:
         logger.info(f"OCRProcessor initialized with server: {server_url}")
         logger.info(f"Live results will be saved to: {self.live_results_file}")
     
+    def check_server_connection(self) -> bool:
+        """
+        Check if vLLM server is accessible
+        
+        Returns:
+            True if server is accessible, False otherwise
+        """
+        try:
+            # Try to get health status
+            response = self.client.health_check()
+            if response:
+                logger.info("vLLM server is healthy")
+                return True
+            else:
+                logger.warning("vLLM server health check failed")
+                return False
+        except Exception as e:
+            logger.error(f"Cannot connect to vLLM server at {self.server_url}: {e}")
+            return False
+    
     def extract_text_from_image(self, image_path: Union[str, Path]) -> str:
         """
-        Extract raw text from image using OCR
+        Extract raw text from image using OCR - copies exactly what it sees
         
         Args:
             image_path: Path to image file
             
         Returns:
-            Raw text extracted from image
+            Raw text extracted from image (exactly as seen)
         """
         try:
             logger.info(f"Extracting text from: {image_path}")
@@ -60,15 +80,20 @@ class OCRProcessor:
             # Load image
             img = Image.open(image_path)
             
-            # OCR extraction with better config for dictionary text
-            custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,;:()[]{}/_-\'"?!'
+            # OCR configuration for exact text extraction (no interpretation)
+            # PSM 6: Uniform block of text (good for dictionary pages)
+            # OEM 3: Default OCR Engine Mode (best accuracy)
+            # No character whitelist - extract everything as seen
+            custom_config = r'--oem 3 --psm 6 -c preserve_interword_spaces=1'
             
+            # Extract text exactly as OCR sees it
             raw_text = pytesseract.image_to_string(img, config=custom_config)
             
             logger.info(f"Extracted {len(raw_text)} characters from {Path(image_path).name}")
             logger.info(f"Text preview: {raw_text[:200]}...")
             
-            return raw_text.strip()
+            # Return raw text without any cleaning or interpretation
+            return raw_text
             
         except Exception as e:
             logger.error(f"OCR extraction failed for {image_path}: {e}")
@@ -94,66 +119,21 @@ class OCRProcessor:
             }
         
         try:
-            # Simple, direct prompt for text processing
-            prompt = f"""Extract all Kalenjin dictionary entries from this text as JSON.
-
-TEXT:
-{raw_text}
-
-Extract each dictionary entry you find. Look for patterns like:
-- Kalenjin word + grammar + pronunciation + English definition
-- Examples: "abus v.t. /ke:-apus/ to give bad advice"
-
-Return as JSON array:
-[
-  {{
-    "grapheme": "kalenjin_word",
-    "ipa": "/pronunciation/",
-    "english_meaning": "definition",
-    "part_of_speech": "v.t.",
-    "context": "usage or examples",
-    "confidence_score": 0.9
-  }}
-]
-
-Extract ALL entries you can identify from the text above."""
-
             logger.info("Sending OCR text to LLM for parsing...")
             
-            # Use chat completions endpoint (text-only, no images!)
-            messages = [
-                {"role": "system", "content": "You are a dictionary extraction specialist. Extract all dictionary entries from the provided text as clean JSON."},
-                {"role": "user", "content": prompt}
-            ]
+            # Use our clean parser to process the OCR text
+            entries = self.parser.parse_ocr_text(raw_text, self.client)
             
-            # Send to LLM server (much faster than image processing)
-            response = self.client.client.chat_completions(messages, max_tokens=4000)
+            logger.info(f"LLM extracted {len(entries)} entries from OCR text")
             
-            if response.get("status") == "success":
-                analysis_text = response.get("content", "")
-                
-                # Parse the LLM response
-                entries = self.parser.parse_vlm_response(analysis_text)
-                
-                logger.info(f"LLM extracted {len(entries)} entries from OCR text")
-                
-                return {
-                    "image_path": image_path,
-                    "entries": [entry.to_dict() if hasattr(entry, 'to_dict') else entry for entry in entries],
-                    "raw_text": raw_text,
-                    "llm_response": analysis_text,
-                    "method": "OCR + LLM",
-                    "status": "success",
-                    "timestamp": datetime.now().isoformat()
-                }
-            else:
-                logger.error(f"LLM processing failed: {response.get('error', 'Unknown error')}")
-                return {
-                    "image_path": image_path,
-                    "entries": [],
-                    "error": f"LLM failed: {response.get('error')}",
-                    "status": "error"
-                }
+            return {
+                "image_path": image_path,
+                "entries": entries,
+                "raw_text": raw_text,
+                "method": "OCR + LLM",
+                "status": "success",
+                "timestamp": datetime.now().isoformat()
+            }
                 
         except Exception as e:
             logger.error(f"Text processing failed: {e}")

@@ -49,7 +49,7 @@ class VLLMClient:
     async def complete_text(self, prompt: str, max_tokens: int = 2000, 
                           temperature: float = 0.1) -> Dict[str, Any]:
         """
-        Complete text using vLLM server
+        Complete text using vLLM server via chat completions endpoint
         
         Args:
             prompt: Text prompt for completion
@@ -63,16 +63,19 @@ class VLLMClient:
             raise RuntimeError("Client session not initialized")
         
         try:
+            # Use chat completions format (OpenAI compatible)
             payload = {
-                "model": "cosmos-reason-vlm",
-                "prompt": prompt,
+                "model": "nvidia/Cosmos-Reason1-7B-Instruct",
+                "messages": [
+                    {"role": "user", "content": prompt}
+                ],
                 "max_tokens": max_tokens,
                 "temperature": temperature,
-                "stop": ["</json>", "\n\n---"]
+                "stop": ["</json>", "\n\n---", "```"]
             }
             
             async with self.session.post(
-                f"{self.server_url}/v1/completions",
+                f"{self.server_url}/v1/chat/completions",
                 json=payload,
                 headers=self.headers,
                 timeout=aiohttp.ClientTimeout(total=120)
@@ -81,21 +84,25 @@ class VLLMClient:
                 if response.status == 200:
                     result = await response.json()
                     
-                    # Extract completion text
+                    # Extract completion text from chat format
                     completion = ""
                     if "choices" in result and len(result["choices"]) > 0:
-                        completion = result["choices"][0].get("text", "")
+                        choice = result["choices"][0]
+                        if "message" in choice:
+                            completion = choice["message"].get("content", "")
+                        elif "text" in choice:
+                            completion = choice.get("text", "")
                     
                     return {
                         "status": "success",
                         "completion": completion,
-                        "model": result.get("model", "cosmos-reason-vlm"),
+                        "model": result.get("model", "nvidia/Cosmos-Reason1-7B-Instruct"),
                         "usage": result.get("usage", {}),
                         "full_response": result
                     }
                 else:
                     error_text = await response.text()
-                    logger.error(f"Completion API error {response.status}: {error_text}")
+                    logger.error(f"Chat completions API error {response.status}: {error_text}")
                     return {
                         "status": "error",
                         "error": f"API error {response.status}: {error_text}"

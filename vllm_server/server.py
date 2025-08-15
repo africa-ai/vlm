@@ -147,8 +147,7 @@ class VLLMServer:
                 sampling_params = SamplingParams(
                     max_tokens=max_tokens,
                     temperature=temperature,
-                    top_p=top_p,
-                    use_beam_search=False
+                    top_p=top_p
                 )
                 
                 # Generate request ID
