@@ -67,12 +67,6 @@ class OCRProcessor:
     def extract_text_from_image(self, image_path: Union[str, Path]) -> str:
         """
         Extract raw text from image using OCR optimized for dictionary structure
-        
-        Args:
-            image_path: Path to image file
-            
-        Returns:
-            Raw text extracted from image with structure preserved
         """
         try:
             logger.info(f"Extracting text from: {image_path}")
@@ -84,46 +78,62 @@ class OCRProcessor:
             if img.mode != 'L':
                 img = img.convert('L')
             
-            # Enhanced OCR configuration for dictionary pages with structure
-            # PSM 6: Uniform block of text (good for dictionary columns)
-            # OEM 1: Neural nets LSTM engine (better accuracy)
-            # Preserve layout and formatting cues
-            # Include numbers for definition numbering (1., 2., etc.)
+            # Simplified OCR config focusing on proper spacing
             custom_config = (
                 r'--oem 1 --psm 6 '
-                r'-c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
-                r'àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿĀāĂăĄąĆćĈĉĊċČčĎďĐđĒēĔĕĖėĘęĚěĜĝĞğĠġĢģĤĥĦħĨĩĪīĬĭĮįİıĲĳĴĵĶķĸĹĺĻļĽľĿŀŁłŃńŅņŇňŉŊŋŌōŎŏŐőŒœŔŕŖŗŘřŚśŜŝŞşŠšŢţŤťŦŧŨũŪūŬŭŮůŰűŲųŴŵŶŷŸŹźŻżŽž'
-                r'0123456789.,;:!?()[]{}/-_=+*|\\\'\" \n\t'
-                r' -c preserve_interword_spaces=1'
-                r' -c textord_tabfind_show_vlines=1'
-                r' -c textord_tabfind_show_tabs=1'
-                r' -c textord_heavy_nr=1'
+                r'-c preserve_interword_spaces=1 '
+                r'-c textord_tabfind_show_vlines=1 '
+                r'-c textord_heavy_nr=1'
             )
             
             # First pass: Get the raw OCR text
             raw_text = pytesseract.image_to_string(img, config=custom_config)
             
-            # Second pass: Try to get more structured output with bbox info if available
-            try:
-                # Get detailed OCR data to help identify structure
-                ocr_data = pytesseract.image_to_data(img, config=custom_config, output_type=pytesseract.Output.DICT)
-                
-                # Process the structured data to improve text layout
-                structured_text = self._process_ocr_structure(raw_text, ocr_data)
-                if structured_text and len(structured_text) > len(raw_text) * 0.8:
-                    raw_text = structured_text
-                    
-            except Exception as e:
-                logger.debug(f"Structured OCR failed, using raw text: {e}")
+            # Clean up the text while preserving structure
+            cleaned_text = self._clean_ocr_spacing(raw_text)
             
-            logger.info(f"Extracted {len(raw_text)} characters from {Path(image_path).name}")
-            logger.info(f"Text preview: {raw_text[:300]}...")
+            logger.info(f"Extracted {len(cleaned_text)} characters from {Path(image_path).name}")
+            logger.info(f"Text preview: {cleaned_text[:200]}...")
             
-            return raw_text
+            return cleaned_text
             
         except Exception as e:
             logger.error(f"OCR extraction failed for {image_path}: {e}")
             return ""
+    
+    def _clean_ocr_spacing(self, raw_text: str) -> str:
+        """Clean OCR text to fix spacing issues"""
+        import re
+        
+        if not raw_text:
+            return ""
+        
+        # Split into lines and process each
+        lines = raw_text.split('\n')
+        clean_lines = []
+        
+        for line in lines:
+            line = line.strip()
+            if len(line) < 2:
+                continue
+            
+            # Fix common OCR spacing issues
+            # Add space between lowercase and uppercase
+            line = re.sub(r'([a-z])([A-Z])', r'\1 \2', line)
+            # Add space before and after forward slashes (IPA markers)
+            line = re.sub(r'(\w)(/)(\w)', r'\1 \2\3', line)
+            # Add space between word and number
+            line = re.sub(r'([a-zA-Z])(\d)', r'\1 \2', line)
+            # Add space between number and word
+            line = re.sub(r'(\d)([a-zA-Z])', r'\1 \2', line)
+            # Ensure space after common grammar markers
+            line = re.sub(r'([.])([a-zA-Z])', r'\1 \2', line)
+            # Clean up multiple spaces
+            line = re.sub(r'\s+', ' ', line)
+            
+            clean_lines.append(line)
+        
+        return '\n'.join(clean_lines)
     
     def _process_ocr_structure(self, raw_text: str, ocr_data: dict) -> str:
         """
@@ -194,13 +204,6 @@ class OCRProcessor:
     def process_text_with_llm(self, raw_text: str, image_path: str = "") -> Dict[str, Any]:
         """
         Process OCR text with LLM to extract dictionary entries
-        
-        Args:
-            raw_text: Raw text from OCR
-            image_path: Original image path (for reference)
-            
-        Returns:
-            Processing result with entries
         """
         if not raw_text.strip():
             return {
@@ -215,12 +218,15 @@ class OCRProcessor:
             
             # Pre-filter OCR text to reduce token count
             cleaned_text = self._prefilter_ocr_text(raw_text)
+            logger.info(f"Cleaned text length: {len(cleaned_text)} characters")
             
             # If text is very long, chunk it
             if len(cleaned_text) > 3000:  # ~750 tokens roughly
+                logger.info("Text is long, using chunked processing...")
                 return self._process_text_in_chunks(cleaned_text, image_path)
             
             # Single fast processing for smaller texts
+            logger.info("Processing text with LLM...")
             entries = self.parser.parse_ocr_text(cleaned_text, self.client)
             
             logger.info(f"LLM extracted {len(entries)} entries from OCR text")
@@ -229,6 +235,7 @@ class OCRProcessor:
                 "image_path": image_path,
                 "entries": entries,
                 "raw_text": raw_text,
+                "cleaned_text": cleaned_text,
                 "method": "OCR + LLM (Optimized)",
                 "status": "success",
                 "timestamp": datetime.now().isoformat()
@@ -236,10 +243,12 @@ class OCRProcessor:
                 
         except Exception as e:
             logger.error(f"Text processing failed: {e}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             return {
                 "image_path": image_path,
                 "entries": [],
-                "error": str(e),
+                "error": f"LLM processing failed: {str(e)}",
                 "status": "error"
             }
     
