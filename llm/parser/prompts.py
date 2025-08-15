@@ -6,32 +6,39 @@ Simple prompts for extracting dictionary entries from OCR'd text.
 # Main extraction prompt for OCR text
 EXTRACTION_PROMPT = """You are processing OCR-extracted text from a Kalenjin dictionary page. 
 
-Your task is to identify and extract dictionary entries in JSON format. Each entry should contain:
-- grapheme: The Kalenjin word/term
-- english_meaning: The English translation or definition  
-- ipa: International Phonetic Alphabet transcription (if present)
+Extract dictionary entries as a clean JSON array. Return ONLY the JSON, no additional text.
 
 OCR Text:
 {ocr_text}
 
-Instructions:
-1. Look for dictionary entry patterns (word followed by definition)
-2. Extract clean Kalenjin words as graphemes
-3. Extract corresponding English meanings/translations
-4. Include IPA transcriptions when present (usually in /slashes/ or [brackets])
-5. Skip headers, page numbers, and non-dictionary content
-6. Return only valid dictionary entries
+CRITICAL REQUIREMENTS:
+1. Your response must be ONLY a valid JSON array - no explanations, comments, or extra text
+2. ALWAYS extract phonetic transcriptions (IPA) when present - this is MANDATORY
+3. Look carefully for pronunciation guides in /slashes/, [brackets], or _underscores_
+4. If no clear phonetic transcription is visible, set ipa to null
 
-Output format - JSON array:
+Instructions for extraction:
+- Extract clean Kalenjin words as graphemes
+- Extract corresponding English meanings/translations  
+- MANDATORY: Find and extract IPA phonetic transcriptions (usually in /slashes/, [brackets], or _underscores_)
+- Include part of speech markers (v.t., v.i., n., adj., etc.) in the english_meaning
+- Skip headers, page numbers, and non-dictionary content
+
+Output format - return ONLY this JSON structure:
 [
   {{
     "grapheme": "kalenjin_word",
-    "english_meaning": "english translation or definition",
-    "ipa": "/phonetic_transcription/" (if available, otherwise null)
+    "english_meaning": "english translation with grammar info",
+    "ipa": "/phonetic_transcription/"
   }}
 ]
 
-Extract dictionary entries from the OCR text above:"""
+REMINDER: Extract phonetic transcriptions whenever they appear in the text. Look for patterns like:
+- /ke:-apus/ 
+- [pronunciation]
+- _phonetic_guide_
+
+JSON ARRAY ONLY:"""
 
 
 def get_extraction_prompt(ocr_text: str) -> str:

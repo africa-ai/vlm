@@ -129,7 +129,7 @@ class DictionaryParser:
     
     def _parse_json_response(self, response: str) -> List[Dict[str, Any]]:
         """
-        Parse JSON response from vLLM, handling various formats
+        Parse JSON response from vLLM, handling various formats with improved extraction
         
         Args:
             response: Raw response text from vLLM
@@ -142,39 +142,31 @@ class DictionaryParser:
         # Clean response text
         response = response.strip()
         
-        # Try to find JSON array or objects
-        json_patterns = [
-            r'\[.*\]',  # JSON array
-            r'\{.*\}',  # Single JSON object
-        ]
+        # Find the JSON array more precisely - look for opening [ and closing ]
+        json_start = response.find('[')
+        json_end = response.rfind(']') + 1
         
-        json_text = None
-        for pattern in json_patterns:
-            match = re.search(pattern, response, re.DOTALL)
-            if match:
-                json_text = match.group(0)
-                break
-        
-        if not json_text:
-            logger.warning("No JSON found in response")
-            return []
-        
-        try:
-            # Parse JSON
-            data = json.loads(json_text)
+        if json_start >= 0 and json_end > json_start:
+            json_text = response[json_start:json_end]
             
-            # Handle different formats
-            if isinstance(data, list):
-                entries = data
-            elif isinstance(data, dict):
-                entries = [data]
-            else:
-                logger.warning(f"Unexpected JSON format: {type(data)}")
-                return []
-                
-        except json.JSONDecodeError as e:
-            logger.warning(f"Failed to parse JSON: {e}")
-            # Try to extract individual JSON objects
+            try:
+                # Parse the extracted JSON
+                data = json.loads(json_text)
+                if isinstance(data, list):
+                    entries = data
+                elif isinstance(data, dict):
+                    entries = [data]
+                else:
+                    logger.warning(f"Unexpected JSON format: {type(data)}")
+                    return []
+                    
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse extracted JSON: {e}")
+                # Fallback to individual object extraction
+                entries = self._extract_individual_objects(json_text)
+        else:
+            logger.warning("No JSON array found in response")
+            # Fallback to pattern matching
             entries = self._extract_individual_objects(response)
         
         return entries
@@ -249,7 +241,7 @@ class DictionaryParser:
     
     def _calculate_confidence(self, grapheme: str, english_meaning: str, ipa: Optional[str]) -> float:
         """
-        Calculate confidence score for an entry
+        Calculate confidence score for an entry - rewards IPA transcriptions
         
         Args:
             grapheme: Kalenjin word
@@ -259,19 +251,20 @@ class DictionaryParser:
         Returns:
             Confidence score (0.0 to 1.0)
         """
-        score = 0.6  # Base score
+        score = 0.5  # Base score
         
         # Grapheme quality
         if len(grapheme) > 2 and re.match(r'^[a-zA-Z-]+$', grapheme):
-            score += 0.1
+            score += 0.15
         
         # English meaning quality
-        if len(english_meaning) > 3 and any(word in english_meaning.lower() for word in ['to', 'a', 'the', 'of', 'in', 'and']):
-            score += 0.1
+        if len(english_meaning) > 3 and any(word in english_meaning.lower() for word in ['to', 'a', 'the', 'of', 'in', 'and', 'v.', 'n.', 'adj.']):
+            score += 0.15
         
-        # IPA presence
+        # IPA presence - MAJOR bonus for finding phonetic transcriptions
         if ipa and re.search(self.patterns['ipa_pattern'], ipa):
-            score += 0.1
+            score += 0.2  # Increased bonus for IPA
+            logger.debug(f"IPA found for '{grapheme}': {ipa}")
         
         # Length reasonableness
         if 2 <= len(grapheme) <= 20 and 3 <= len(english_meaning) <= 100:
