@@ -25,48 +25,135 @@ class DictionaryParser:
         """
         self.config = config
         
-        # Regex patterns for cleaning and validation
+        # Enhanced regex patterns based on actual Kalenjin dictionary analysis
         self.patterns = {
-            'ipa_pattern': r'(/[^/]+/)',  # Specifically look for /content/ pattern
-            'kalenjin_word': r'\b[a-zA-Z-]{2,}\b',
-            'english_text': r'[a-zA-Z\s\-\',\.;:]+',
-            'artifact_pattern': r'^[^a-zA-Z]*$|^\d+$|^[IV]+\.$',
-            'grammar_markers': r'\b(c\.|p\.|a\.|v\.|n\.|adj\.|adv\.|prep\.|conj\.|interj\.|v\.t\.|v\.i\.|v\.itv\.|v\.app\.|v\.refl\.|v\.ven\.|v\.ins\.)\b',
-            'headword_pattern': r'^[a-zA-Z][a-zA-Z-]*[a-zA-Z]?$',  # Valid headword pattern
-            'example_indicators': r'\b(The|He|She|It|I|You|We|They|There|What|Where|When|How)\b'  # Sentence starters to avoid
+            # Real IPA patterns from dictionary: /_abus-é:t, _abus-0/, /_apus-nat-é:t/
+            'ipa_pattern': r'(/[_a-zA-Z:\-é,\s]+/)',
+            
+            # Real Kalenjin headwords: abuset, abusnatet, abutanut, ach, acha, etc.
+            'headword_pattern': r'^[a-zA-Z][a-zA-Z-]*[a-zA-Z]?$',
+            
+            # Complete grammar markers from actual dictionary
+            'grammar_markers': r'\b(n\.|v\.|v\.caus\.|v\.t\.|v\.i\.|pn\.|adv\.|i\.|num\.|p\.)\b',
+            
+            # Artifacts to skip
+            'artifact_pattern': r'^[^a-zA-Z]*$|^\d+$|^[IV]+\.$|^Nandi|^English|^\d+\s*$',
+            
+            # Example sentence indicators to skip (including real sentence patterns)
+            'example_indicators': r'\b(The|He|She|It|I|You|We|They|There|What|Where|When|How|Koaget|Konu|Give|Owendi|Acha|mete)\b',
+            
+            # Example sentence pattern: "Kalenjin. English. /ipa/"
+            'example_sentence_pattern': r'^[A-Z][a-zA-Z\s]+\.\s+[A-Z][a-zA-Z\s\(\)]+\.\s*/[^/]+/$',
+            
+            # Real Kalenjin words (3-8 chars typical)
+            'kalenjin_word': r'\b[a-zA-Z-]{3,12}\b',
+            
+            # Cross-reference pattern: "(see yai)", "[< Swa. hela tano]"
+            'cross_reference': r'\([^)]*see\s+[^)]*\)|\[[^\]]*<[^\]]*\]'
         }
     
-    def parse_ocr_text(self, ocr_text: str, vllm_client) -> List[Dict[str, Any]]:
+    def parse_ocr_text(self, ocr_text: str, vllm_client) -> Dict[str, Any]:
         """
-        Parse dictionary entries from OCR-extracted text using vLLM
+        Parse both dictionary entries AND example sentences from OCR text
         
         Args:
             ocr_text: Raw text extracted from OCR
             vllm_client: vLLM client for text completion
             
         Returns:
-            List of extracted dictionary entries
+            Dictionary with both entries and example sentences
         """
         if not ocr_text or not ocr_text.strip():
             logger.warning("Empty OCR text provided")
-            return []
+            return {"entries": [], "examples": []}
         
-        # Clean OCR text
-        cleaned_text = self._clean_ocr_text(ocr_text)
+        # Clean OCR text but preserve example sentences
+        cleaned_text = self._clean_ocr_text_preserve_examples(ocr_text)
         
         if not cleaned_text:
             logger.warning("No valid text after cleaning OCR output")
-            return []
+            return {"entries": [], "examples": []}
         
-        # Get extraction prompt - combine system and user prompt
+        # Extract example sentences first (they're gold!)
+        example_sentences = self._extract_example_sentences(cleaned_text)
+        
+        # Extract dictionary entries
+        dictionary_entries = self._extract_dictionary_entries(cleaned_text, vllm_client)
+        
+        logger.info(f"Extracted {len(dictionary_entries)} dictionary entries and {len(example_sentences)} example sentences")
+        
+        return {
+            "entries": dictionary_entries,
+            "examples": example_sentences
+        }
+    
+    def _extract_example_sentences(self, text: str) -> List[Dict[str, Any]]:
+        """
+        Extract example sentences: Kalenjin sentence + English translation + IPA
+        
+        Args:
+            text: Cleaned OCR text
+            
+        Returns:
+            List of example sentence objects
+        """
+        examples = []
+        lines = text.split('\n')
+        
+        # Pattern: "Kalenjin sentence. English translation. /ipa_pronunciation/"
+        example_patterns = [
+            r'^([A-Z][a-zA-Z\s]+)\.\s+([A-Z][a-zA-Z\s\(\)\']+)\.\s+(/[^/]+/)$',
+            r'^([A-Z][a-zA-Z\s,!]+!?)\s+([A-Z][a-zA-Z\s\(\),!\']+!?)\s+(/[^/]+/)$'
+        ]
+        
+        for line in lines:
+            line = line.strip()
+            if len(line) < 10:
+                continue
+            
+            for pattern in example_patterns:
+                match = re.match(pattern, line)
+                if match:
+                    kalenjin_sentence = match.group(1).strip()
+                    english_translation = match.group(2).strip()
+                    ipa_pronunciation = match.group(3).strip()
+                    
+                    example = {
+                        'kalenjin': kalenjin_sentence,
+                        'english': english_translation,
+                        'ipa': ipa_pronunciation,
+                        'source_line': line,
+                        'confidence': 0.9  # High confidence for pattern matches
+                    }
+                    
+                    examples.append(example)
+                    logger.debug(f"Found example sentence: {kalenjin_sentence} → {english_translation}")
+                    break
+        
+        logger.info(f"Extracted {len(examples)} example sentences")
+        return examples
+    
+    def _extract_dictionary_entries(self, text: str, vllm_client) -> List[Dict[str, Any]]:
+        """
+        Extract dictionary entries using vLLM
+        
+        Args:
+            text: Cleaned OCR text
+            vllm_client: vLLM client
+            
+        Returns:
+            List of dictionary entries
+        """
+        # Filter out example sentences for dictionary extraction
+        filtered_text = self._filter_examples_for_dictionary(text)
+        
+        # Get extraction prompt
         system_prompt = get_system_prompt()
-        user_prompt = get_extraction_prompt(cleaned_text)
-        
-        # Combine prompts for single completion call
+        user_prompt = get_extraction_prompt(filtered_text)
         full_prompt = f"{system_prompt}\n\n{user_prompt}"
         
         try:
-            # Process with vLLM - simple completion call
+            # Process with vLLM
             response = vllm_client.complete_text(
                 prompt=full_prompt,
                 max_tokens=4000,
@@ -78,9 +165,7 @@ class DictionaryParser:
                 logger.error(f"vLLM completion failed: {error_msg}")
                 return []
             
-            # Extract the completion content from vLLM response
             completion = response.get('completion', '')
-            
             if not completion:
                 logger.error("Empty completion from vLLM")
                 return []
@@ -88,29 +173,77 @@ class DictionaryParser:
             # Parse JSON response
             entries = self._parse_json_response(completion)
             
-            # Validate and clean entries
+            # Validate entries
             valid_entries = []
             for entry in entries:
                 cleaned_entry = self._validate_entry(entry)
                 if cleaned_entry:
                     valid_entries.append(cleaned_entry)
             
-            logger.info(f"Extracted {len(valid_entries)} valid entries from OCR text")
             return valid_entries
             
         except Exception as e:
-            logger.error(f"Error processing OCR text with vLLM: {e}")
+            logger.error(f"Dictionary extraction failed: {e}")
             return []
     
-    def _clean_ocr_text(self, text: str) -> str:
+    def _clean_ocr_text_preserve_examples(self, text: str) -> str:
         """
-        Clean OCR text to improve LLM processing
+        Clean OCR text while preserving example sentences (they're gold!)
         
         Args:
             text: Raw OCR text
             
         Returns:
-            Cleaned text
+            Cleaned text with example sentences preserved
+        """
+        if not text:
+            return ""
+        
+        cleaned = text.strip()
+        cleaned = re.sub(r'\s+', ' ', cleaned)
+        
+        # Light cleaning - preserve structure
+        lines = cleaned.split('\n')
+        clean_lines = [line.strip() for line in lines if len(line.strip()) > 2]
+        
+        return '\n'.join(clean_lines)
+    
+    def _filter_examples_for_dictionary(self, text: str) -> str:
+        """
+        Filter out example sentences when extracting dictionary entries
+        """
+        lines = text.split('\n')
+        clean_lines = []
+        
+        example_patterns = [
+            r'^[A-Z][a-zA-Z\s]+\.\s+[A-Z].*\.\s*/.*/$',  # "Koaget tuga. The cattle grazed. /ipa/"
+            r'^\([A-Z].*\)\s+.*\.\s*/.*/$',              # "(S/he) grazed the cattle. /ipa/"
+            r'^Give\s+\(me\).*\.\s*/.*/$',               # "Give (me) 3 ten cent pieces. /ipa/"
+            r'^[A-Z][a-zA-Z\s,!]+!?\s+[A-Z].*!?\s*/.*/$' # "Acha, mete! No, leave (it)! /ipa/"
+        ]
+        
+        for line in lines:
+            line = line.strip()
+            if len(line) < 3:
+                continue
+            
+            # Skip if matches example sentence pattern
+            if any(re.match(pattern, line) for pattern in example_patterns):
+                continue
+            
+            clean_lines.append(line)
+        
+        return '\n'.join(clean_lines)
+    
+    def _clean_ocr_text(self, text: str) -> str:
+        """
+        Clean OCR text to improve LLM processing, removing example sentences
+        
+        Args:
+            text: Raw OCR text
+            
+        Returns:
+            Cleaned text with example sentences filtered out
         """
         if not text:
             return ""
@@ -124,9 +257,32 @@ class DictionaryParser:
         # Remove common OCR artifacts
         cleaned = re.sub(r'[^\w\s\-/\[\]().,;:\'"]', ' ', cleaned)
         
-        # Remove very short lines (likely artifacts)
+        # Split into lines and filter
         lines = cleaned.split('\n')
-        clean_lines = [line.strip() for line in lines if len(line.strip()) > 2]
+        clean_lines = []
+        
+        for line in lines:
+            line = line.strip()
+            if len(line) < 3:  # Skip very short lines
+                continue
+            
+            # Skip example sentences with pattern "Kalenjin. English. /ipa/"
+            if re.match(self.patterns['example_sentence_pattern'], line):
+                logger.debug(f"Filtered example sentence: {line}")
+                continue
+            
+            # Skip lines that are clearly example sentences
+            example_patterns = [
+                r'^[A-Z][a-zA-Z\s]+\.\s+[A-Z].*\.\s*/.*/$',  # "Koaget tuga. The cattle grazed. /ipa/"
+                r'^\([A-Z].*\)\s+.*\.\s*/.*/$',              # "(S/he) grazed the cattle. /ipa/"
+                r'^Give\s+\(me\).*\.\s*/.*/$',               # "Give (me) 3 ten cent pieces. /ipa/"
+            ]
+            
+            if any(re.match(pattern, line) for pattern in example_patterns):
+                logger.debug(f"Filtered example by pattern: {line}")
+                continue
+            
+            clean_lines.append(line)
         
         return '\n'.join(clean_lines)
     
@@ -201,84 +357,115 @@ class DictionaryParser:
     
     def _validate_entry(self, entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
-        Validate and clean a dictionary entry - optimized for Kalenjin dictionary structure
-        
-        Args:
-            entry: Raw dictionary entry
-            
-        Returns:
-            Cleaned entry or None if invalid
+        Enhanced validation based on actual Kalenjin dictionary patterns
         """
         if not isinstance(entry, dict):
             return None
         
-        # Required fields
+        # Get fields (support both old and new formats)
         grapheme = entry.get('grapheme', '').strip()
-        english_meaning = entry.get('english_meaning', '').strip()
+        grammar = entry.get('grammar', '').strip()
+        ipa = entry.get('ipa', '').strip()
+        definition = entry.get('definition', entry.get('english_meaning', '')).strip()
         
-        if not grapheme or not english_meaning:
+        if not grapheme or not definition:
+            logger.debug(f"Missing required fields: grapheme={grapheme}, definition={definition}")
             return None
         
-        # Skip artifacts and OCR errors
+        # Skip artifacts using real patterns
         if re.match(self.patterns['artifact_pattern'], grapheme):
+            logger.debug(f"Skipping artifact: {grapheme}")
             return None
             
-        # Validate headword pattern (should look like: ak, akwai, ke-al, alamaliet)
-        if not re.match(self.patterns['headword_pattern'], grapheme):
-            logger.debug(f"Invalid headword pattern: {grapheme}")
+        # Validate real Kalenjin headword patterns (3-12 chars, from actual data)
+        if not (3 <= len(grapheme) <= 12) or not re.match(self.patterns['headword_pattern'], grapheme):
+            logger.debug(f"Invalid headword: {grapheme}")
             return None
             
-        # Skip entries with numbers in headword (numbers only for definitions)
+        # Skip if headword contains numbers (only definitions should have numbers)
         if re.search(r'[0-9]', grapheme):
-            logger.debug(f"Skipping entry with numbers in headword: {grapheme}")
+            logger.debug(f"Skipping headword with numbers: {grapheme}")
             return None
             
-        # Skip example sentences (look for sentence indicators)
-        if re.search(self.patterns['example_indicators'], english_meaning):
-            logger.debug(f"Skipping example sentence: {english_meaning}")
+        # Skip obvious example sentences using real sentence patterns
+        if re.search(self.patterns['example_indicators'], definition):
+            logger.debug(f"Skipping example sentence: {definition[:50]}")
+            return None
+        
+        # Skip example sentences with pattern "Kalenjin. English. /ipa/"
+        if re.match(self.patterns['example_sentence_pattern'], definition):
+            logger.debug(f"Skipping example sentence pattern: {definition}")
+            return None
+        
+        # Skip if definition starts with common sentence patterns
+        if definition.startswith(('The ', 'He ', 'She ', 'It ', 'I ', 'You ', 'We ', 'They ')):
+            logger.debug(f"Skipping sentence starting definition: {definition[:50]}")
             return None
             
-        # Skip very long "definitions" that are likely examples or sentences
-        if len(english_meaning) > 150:  # Dictionary definitions should be concise
-            logger.debug(f"Skipping overly long definition: {english_meaning[:50]}...")
-            return None
+        # Validate grammar marker against real patterns
+        if grammar and not re.search(self.patterns['grammar_markers'], grammar):
+            logger.debug(f"Invalid grammar marker: {grammar}")
+            # Don't reject, just clear invalid grammar
+            grammar = ""
             
-        # Validate and clean IPA - must be in /forward slashes/
-        ipa = entry.get('ipa', '')
+        # Enhanced IPA validation using real patterns
+        clean_ipa = None
         if ipa:
-            ipa = ipa.strip()
-            # Only accept IPA in /forward slashes/ format
             ipa_match = re.search(self.patterns['ipa_pattern'], ipa)
             if ipa_match:
-                ipa = ipa_match.group(1)  # Extract just the /content/
+                clean_ipa = ipa_match.group(1)
+                logger.debug(f"Valid IPA found: {clean_ipa}")
             else:
-                logger.debug(f"Invalid IPA format, ignoring: {ipa}")
-                ipa = None
-        else:
-            ipa = None
+                logger.debug(f"Invalid IPA format: {ipa}")
         
-        # Clean grapheme (remove ke- prefixes for validation if needed)
-        base_grapheme = grapheme
-        if grapheme.startswith('ke-'):
-            base_grapheme = grapheme[3:]  # Remove ke- prefix for some validations
-            
-        # Ensure reasonable lengths
-        if len(base_grapheme) < 2 or len(english_meaning) < 3:
+        # Skip definitions that are clearly too long (examples vs definitions)
+        if len(definition) > 200:
+            logger.debug(f"Definition too long, likely example: {definition[:50]}...")
             return None
-        
-        # Handle numbered definitions (merge multiple meanings)
-        definitions = self._merge_numbered_definitions(english_meaning)
-        
-        # Build clean entry
+            
+        # Handle cross-references and etymology
+        clean_definition = re.sub(self.patterns['cross_reference'], '', definition).strip()
+        if not clean_definition:
+            return None
+            
+        # Build validated entry with new structure
         clean_entry = {
             'grapheme': grapheme,
-            'english_meaning': english_meaning,
-            'ipa': ipa,
-            'definitions': definitions,  # Add parsed definitions
-            'confidence': self._calculate_confidence(grapheme, english_meaning, ipa)
+            'grammar': grammar,
+            'ipa': clean_ipa,
+            'definition': clean_definition,
+            'confidence': self._calculate_enhanced_confidence(grapheme, grammar, clean_ipa, clean_definition)
         }
         
         return clean_entry
+    
+    def _calculate_enhanced_confidence(self, grapheme: str, grammar: str, ipa: str, definition: str) -> float:
+        """
+        Enhanced confidence calculation based on real dictionary patterns
+        """
+        score = 0.3  # Base score
+        
+        # Headword quality (real patterns: abuset, acha, aget)
+        if 3 <= len(grapheme) <= 8 and re.match(r'^[a-zA-Z-]+$', grapheme):
+            score += 0.2
+            
+        # Grammar marker presence (real markers: n., v., v.caus., etc.)
+        if grammar and re.search(self.patterns['grammar_markers'], grammar):
+            score += 0.2
+            
+        # IPA presence (major quality indicator)
+        if ipa and re.search(self.patterns['ipa_pattern'], ipa):
+            score += 0.3  # High value for IPA presence
+            
+        # Definition quality
+        if 5 <= len(definition) <= 100 and any(word in definition.lower() for word in ['to', 'of', 'the', 'a', 'in']):
+            score += 0.1
+            
+        # Bonus for common Kalenjin patterns
+        if grapheme.startswith(('ab', 'ag', 'ach', 'ak', 'ai')):  # Common prefixes from real data
+            score += 0.05
+            
+        return min(1.0, score)
     
     def _merge_numbered_definitions(self, definition: str) -> list:
         """

@@ -4,28 +4,44 @@ Optimized for fast, direct extraction (thinking disabled).
 """
 
 # Main extraction prompt for OCR text
-# Main extraction prompt optimized for Qwen3-8B (thinking disabled)
-EXTRACTION_PROMPT = """Extract dictionary entries from OCR text. Return only JSON.
+# Main extraction prompt optimized for Qwen3-8B based on actual dictionary analysis
+EXTRACTION_PROMPT = """Extract dictionary entries from this Kalenjin-English dictionary text. Use the EXACT patterns shown below.
 
-DICTIONARY STRUCTURE:
-- HEADWORDS: Kalenjin words (ak, akwai, ke-al) - NO NUMBERS
-- GRAMMAR: c., p., a., v., n., adj., v.t., v.i.
-- IPA: In /forward slashes/ like /ák/, /ákwá:y/
-- DEFINITIONS: English meanings, preserve numbers (1., 2., 3.)
+KALENJIN DICTIONARY STRUCTURE (from actual page):
+• HEADWORDS: abuset, abusnatet, abutanut, ach, acha, achek, agai, age, agenge, aget, agine, agutaniet, agutie, aita, aiya, aiyeb, ak
+• GRAMMAR MARKERS: n. (noun), v. (verb), v.caus. (causative verb), v.t. (transitive verb), pn. (pronoun), adv. (adverb), i. (interjection), num. (numeral), p. (preposition)
+• IPA FORMAT: /_abus-é:t, _abus-0/, /_apus-nat-é:t/, /_a:c/, /_a:ca, _a:cica/, /_acé:k/, /_akay/, /_aké/, /_aké:nke/, /_kw-aké:t/, /_ki:-aké:t/, /_akiné/, /_akuta:n-yét/, /ke:-aku:tyé:/, /_ay-ta/, /_a:yya/, /_ayya/, /_ayye:p/
 
-OCR TEXT:
+IMPORTANT - EXAMPLE SENTENCES (DO NOT EXTRACT AS ENTRIES):
+Example sentences appear within entries following pattern: KALENJIN_SENTENCE. English translation. /ipa_pronunciation/
+• "Koaget tuga. The cattle grazed yesterday. /_ko:-aké:t _tu:-ka/"
+• "Konu abutanosiek somok. Give (me) 3 ten cent pieces. /ko:n-U: _aputa:n-o:s-yék/"
+• "Owendi agine. I'm going, too. /a-wé:n-ti: _akiné/"
+• "Acha, mete! No, leave (it)! /_a:ca meté:/"
+
+OCR TEXT TO PROCESS:
 {ocr_text}
 
-RULES:
-1. Extract main entries only, skip examples
-2. Headwords = pure Kalenjin (no numbers)
-3. Preserve numbered definitions (1. fat. 2. rich.)
-4. IPA must be in /slashes/
+EXTRACTION RULES:
+1. HEADWORDS are standalone words at line start: "abuset", "acha", "aget", etc.
+2. GRAMMAR immediately follows headword: "abuset n.", "ach p.", "aget v."  
+3. IPA in /slashes/ with underscores and colons: /_abus-é:t, _abus-0/
+4. DEFINITIONS follow IPA, may include examples
+5. SKIP: page numbers (26), headers (Nandi — English), cross-references in parentheses
+6. SKIP: Example sentences with pattern "Kalenjin. English. /ipa/"
+7. HANDLE VARIANTS: Some entries have multiple forms (kw-aget, ki-aget)
 
-JSON FORMAT:
-[{{"grapheme": "headword", "english_meaning": "grammar + definition", "ipa": "/pronunciation/"}}]
+EXACT FORMAT FROM REAL DICTIONARY ENTRIES (NOT EXAMPLES):
+- "abuset n. /_abus-é:t, _abus-0/ [< ke-abus to fool] conning."
+- "ach p. /_a:c/ without."
+- "acha i. /_a:ca, _a:cica, _a:cicica/ no!"
+- "kw-aget v. /_kw-aké:t/ to graze (of livestock)."
+- "ki-aget v.caus. /_ki:-aké:t/ to graze (tr.)."
 
-JSON ONLY:"""
+JSON OUTPUT:
+[{{"grapheme": "headword", "grammar": "part_of_speech", "ipa": "/pronunciation/", "definition": "meaning"}}]
+
+Extract ONLY main dictionary entries, NOT example sentences. Return ONLY JSON array:"""
 
 
 def get_extraction_prompt(ocr_text: str) -> str:

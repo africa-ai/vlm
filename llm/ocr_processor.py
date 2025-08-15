@@ -30,19 +30,30 @@ class OCRProcessor:
         self.client = SyncVLLMClient(server_url, config.api_key if hasattr(config, 'api_key') else None)
         self.parser = DictionaryParser()
         
-        # Setup output directory
+        # Setup output directories
         self.output_dir = Path(config.output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create separate folders for entries and examples
+        self.entries_dir = self.output_dir / "dictionary_entries"
+        self.examples_dir = self.output_dir / "example_sentences"
+        self.entries_dir.mkdir(parents=True, exist_ok=True)
+        self.examples_dir.mkdir(parents=True, exist_ok=True)
         
         # Setup continuous saving
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.live_results_file = self.output_dir / f"ocr_results_{timestamp}.jsonl"
-        self.live_entries_file = self.output_dir / f"ocr_entries_{timestamp}.json"
+        self.live_entries_file = self.entries_dir / f"dictionary_entries_{timestamp}.json"
+        self.live_examples_file = self.examples_dir / f"example_sentences_{timestamp}.json"
+        
         self.processed_count = 0
         self.all_entries = []
+        self.all_examples = []
         
         logger.info(f"OCRProcessor initialized with server: {server_url}")
-        logger.info(f"Live results will be saved to: {self.live_results_file}")
+        logger.info(f"📚 Dictionary entries will be saved to: {self.entries_dir}")
+        logger.info(f"🗣️  Example sentences will be saved to: {self.examples_dir}")
+        logger.info(f"📊 Live results will be saved to: {self.live_results_file}")
     
     def check_server_connection(self) -> bool:
         """
@@ -66,10 +77,15 @@ class OCRProcessor:
     
     def extract_text_from_image(self, image_path: Union[str, Path]) -> str:
         """
-        Extract raw text from image using OCR optimized for dictionary structure
+        Extract raw text from image using high accuracy OCR configuration
+        Optimized for maximum dictionary entry detection (7 headwords vs 4)
         """
         try:
             logger.info(f"Extracting text from: {image_path}")
+            
+            # Configure Tesseract path for Windows
+            import pytesseract
+            pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
             
             # Load image
             img = Image.open(image_path)
@@ -78,62 +94,23 @@ class OCRProcessor:
             if img.mode != 'L':
                 img = img.convert('L')
             
-            # Simplified OCR config focusing on proper spacing
-            custom_config = (
-                r'--oem 1 --psm 6 '
-                r'-c preserve_interword_spaces=1 '
-                r'-c textord_tabfind_show_vlines=1 '
-                r'-c textord_heavy_nr=1'
-            )
+            # HIGH ACCURACY configuration (best from comparison tests)
+            # OEM 1: Neural LSTM engine (most accurate)
+            # PSM 3: Fully automatic page segmentation (preserves dictionary layout)
+            # preserve_interword_spaces: Maintains proper word spacing
+            high_accuracy_config = r'--oem 1 --psm 3 -c preserve_interword_spaces=1'
             
-            # First pass: Get the raw OCR text
-            raw_text = pytesseract.image_to_string(img, config=custom_config)
+            raw_text = pytesseract.image_to_string(img, config=high_accuracy_config)
             
-            # Clean up the text while preserving structure
-            cleaned_text = self._clean_ocr_spacing(raw_text)
+            logger.info(f"Extracted {len(raw_text)} characters from {Path(image_path).name}")
+            logger.info(f"Using HIGH ACCURACY config - expect ~7 headwords per page")
+            logger.info(f"Text preview: {raw_text[:200]}...")
             
-            logger.info(f"Extracted {len(cleaned_text)} characters from {Path(image_path).name}")
-            logger.info(f"Text preview: {cleaned_text[:200]}...")
-            
-            return cleaned_text
+            return raw_text
             
         except Exception as e:
             logger.error(f"OCR extraction failed for {image_path}: {e}")
             return ""
-    
-    def _clean_ocr_spacing(self, raw_text: str) -> str:
-        """Clean OCR text to fix spacing issues"""
-        import re
-        
-        if not raw_text:
-            return ""
-        
-        # Split into lines and process each
-        lines = raw_text.split('\n')
-        clean_lines = []
-        
-        for line in lines:
-            line = line.strip()
-            if len(line) < 2:
-                continue
-            
-            # Fix common OCR spacing issues
-            # Add space between lowercase and uppercase
-            line = re.sub(r'([a-z])([A-Z])', r'\1 \2', line)
-            # Add space before and after forward slashes (IPA markers)
-            line = re.sub(r'(\w)(/)(\w)', r'\1 \2\3', line)
-            # Add space between word and number
-            line = re.sub(r'([a-zA-Z])(\d)', r'\1 \2', line)
-            # Add space between number and word
-            line = re.sub(r'(\d)([a-zA-Z])', r'\1 \2', line)
-            # Ensure space after common grammar markers
-            line = re.sub(r'([.])([a-zA-Z])', r'\1 \2', line)
-            # Clean up multiple spaces
-            line = re.sub(r'\s+', ' ', line)
-            
-            clean_lines.append(line)
-        
-        return '\n'.join(clean_lines)
     
     def _process_ocr_structure(self, raw_text: str, ocr_data: dict) -> str:
         """
@@ -226,17 +203,22 @@ class OCRProcessor:
                 return self._process_text_in_chunks(cleaned_text, image_path)
             
             # Single fast processing for smaller texts
-            logger.info("Processing text with LLM...")
-            entries = self.parser.parse_ocr_text(cleaned_text, self.client)
+            logger.info("Processing text with enhanced LLM parser...")
+            result = self.parser.parse_ocr_text(cleaned_text, self.client)
             
-            logger.info(f"LLM extracted {len(entries)} entries from OCR text")
+            # Result now contains both entries and examples
+            entries = result.get("entries", [])
+            examples = result.get("examples", [])
+            
+            logger.info(f"LLM extracted {len(entries)} dictionary entries and {len(examples)} example sentences from OCR text")
             
             return {
                 "image_path": image_path,
                 "entries": entries,
+                "examples": examples,
                 "raw_text": raw_text,
                 "cleaned_text": cleaned_text,
-                "method": "OCR + LLM (Optimized)",
+                "method": "OCR + LLM (Enhanced with Examples)",
                 "status": "success",
                 "timestamp": datetime.now().isoformat()
             }
@@ -311,37 +293,76 @@ class OCRProcessor:
         return self.batch_process_images(image_paths)
     
     def save_live_result(self, result: Dict[str, Any]) -> None:
-        """Save individual processing result immediately"""
+        """Save individual processing result immediately with dual extraction support"""
         try:
-            # Append to JSONL file
+            # Append to main JSONL file
             with open(self.live_results_file, 'a', encoding='utf-8') as f:
                 json.dump(result, f, ensure_ascii=False)
                 f.write('\n')
             
-            # Update running totals
+            # Update running totals for entries and examples
             if result.get("status") == "success":
                 entries = result.get("entries", [])
-                self.all_entries.extend(entries)
+                examples = result.get("examples", [])
                 
-                # Update live entries file
+                # Extend collections
+                self.all_entries.extend(entries)
+                self.all_examples.extend(examples)
+                
+                # Save dictionary entries to separate file if any found
+                if entries:
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    entries_file = os.path.join(self.entries_dir, f"entries_{timestamp}.json")
+                    with open(entries_file, 'w', encoding='utf-8') as f:
+                        json.dump({
+                            "entries": entries,
+                            "source_image": result["image_path"],
+                            "timestamp": result["timestamp"],
+                            "method": result["method"]
+                        }, f, ensure_ascii=False, indent=2)
+                
+                # Save example sentences to separate file if any found
+                if examples:
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    examples_file = os.path.join(self.examples_dir, f"examples_{timestamp}.json")
+                    with open(examples_file, 'w', encoding='utf-8') as f:
+                        json.dump({
+                            "examples": examples,
+                            "source_image": result["image_path"],
+                            "timestamp": result["timestamp"],
+                            "method": result["method"]
+                        }, f, ensure_ascii=False, indent=2)
+                
+                # Update comprehensive live entries file
                 with open(self.live_entries_file, 'w', encoding='utf-8') as f:
                     json.dump({
                         "total_entries": len(self.all_entries),
+                        "total_examples": len(self.all_examples),
                         "processed_images": self.processed_count,
                         "last_updated": datetime.now().isoformat(),
-                        "processing_method": "OCR + LLM",
-                        "entries": self.all_entries
+                        "processing_method": "OCR + LLM (Enhanced with Examples)",
+                        "entries": self.all_entries,
+                        "examples": self.all_examples
                     }, f, indent=2, ensure_ascii=False)
                 
-                # Log samples
+                # Log samples for both entries and examples
                 if entries:
-                    logger.info(f"📝 Sample entries from {Path(result['image_path']).name}:")
+                    logger.info(f"📝 Dictionary entries from {Path(result['image_path']).name}:")
                     for i, entry in enumerate(entries[:3]):
                         kalenjin = entry.get("grapheme", "")
                         english = entry.get("english_meaning", "")
                         logger.info(f"  {i+1}. {kalenjin} → {english}")
                     if len(entries) > 3:
-                        logger.info(f"  ... and {len(entries)-3} more entries")
+                        logger.info(f"  ... and {len(entries)-3} more dictionary entries")
+                
+                if examples:
+                    logger.info(f"🗣️  Example sentences from {Path(result['image_path']).name}:")
+                    for i, example in enumerate(examples[:2]):
+                        kalenjin = example.get("kalenjin_sentence", "")
+                        english = example.get("english_translation", "")
+                        logger.info(f"  {i+1}. {kalenjin} → {english}")
+                    if len(examples) > 2:
+                        logger.info(f"  ... and {len(examples)-2} more example sentences")
         
         except Exception as e:
             logger.error(f"Failed to save live result: {e}")
