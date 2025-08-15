@@ -27,10 +27,13 @@ class DictionaryParser:
         
         # Regex patterns for cleaning and validation
         self.patterns = {
-            'ipa_pattern': r'(/[^/]+/|\[[^\]]+\]|_[^_]+_)',
+            'ipa_pattern': r'(/[^/]+/)',  # Specifically look for /content/ pattern
             'kalenjin_word': r'\b[a-zA-Z-]{2,}\b',
             'english_text': r'[a-zA-Z\s\-\',\.;:]+',
-            'artifact_pattern': r'^[^a-zA-Z]*$|^\d+$|^[IV]+\.$',  # Roman numerals, numbers, etc.
+            'artifact_pattern': r'^[^a-zA-Z]*$|^\d+$|^[IV]+\.$',
+            'grammar_markers': r'\b(c\.|p\.|a\.|v\.|n\.|adj\.|adv\.|prep\.|conj\.|interj\.|v\.t\.|v\.i\.|v\.itv\.|v\.app\.|v\.refl\.|v\.ven\.|v\.ins\.)\b',
+            'headword_pattern': r'^[a-zA-Z][a-zA-Z-]*[a-zA-Z]?$',  # Valid headword pattern
+            'example_indicators': r'\b(The|He|She|It|I|You|We|They|There|What|Where|When|How)\b'  # Sentence starters to avoid
         }
     
     def parse_ocr_text(self, ocr_text: str, vllm_client) -> List[Dict[str, Any]]:
@@ -198,7 +201,7 @@ class DictionaryParser:
     
     def _validate_entry(self, entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
-        Validate and clean a dictionary entry
+        Validate and clean a dictionary entry - optimized for Kalenjin dictionary structure
         
         Args:
             entry: Raw dictionary entry
@@ -216,28 +219,106 @@ class DictionaryParser:
         if not grapheme or not english_meaning:
             return None
         
-        # Skip artifacts
+        # Skip artifacts and OCR errors
         if re.match(self.patterns['artifact_pattern'], grapheme):
             return None
-        
-        # Clean IPA if present
+            
+        # Validate headword pattern (should look like: ak, akwai, ke-al, alamaliet)
+        if not re.match(self.patterns['headword_pattern'], grapheme):
+            logger.debug(f"Invalid headword pattern: {grapheme}")
+            return None
+            
+        # Skip entries with numbers in headword (numbers only for definitions)
+        if re.search(r'[0-9]', grapheme):
+            logger.debug(f"Skipping entry with numbers in headword: {grapheme}")
+            return None
+            
+        # Skip example sentences (look for sentence indicators)
+        if re.search(self.patterns['example_indicators'], english_meaning):
+            logger.debug(f"Skipping example sentence: {english_meaning}")
+            return None
+            
+        # Skip very long "definitions" that are likely examples or sentences
+        if len(english_meaning) > 150:  # Dictionary definitions should be concise
+            logger.debug(f"Skipping overly long definition: {english_meaning[:50]}...")
+            return None
+            
+        # Validate and clean IPA - must be in /forward slashes/
         ipa = entry.get('ipa', '')
         if ipa:
             ipa = ipa.strip()
-            if not re.search(self.patterns['ipa_pattern'], ipa):
+            # Only accept IPA in /forward slashes/ format
+            ipa_match = re.search(self.patterns['ipa_pattern'], ipa)
+            if ipa_match:
+                ipa = ipa_match.group(1)  # Extract just the /content/
+            else:
+                logger.debug(f"Invalid IPA format, ignoring: {ipa}")
                 ipa = None
         else:
             ipa = None
+        
+        # Clean grapheme (remove ke- prefixes for validation if needed)
+        base_grapheme = grapheme
+        if grapheme.startswith('ke-'):
+            base_grapheme = grapheme[3:]  # Remove ke- prefix for some validations
+            
+        # Ensure reasonable lengths
+        if len(base_grapheme) < 2 or len(english_meaning) < 3:
+            return None
+        
+        # Handle numbered definitions (merge multiple meanings)
+        definitions = self._merge_numbered_definitions(english_meaning)
         
         # Build clean entry
         clean_entry = {
             'grapheme': grapheme,
             'english_meaning': english_meaning,
             'ipa': ipa,
+            'definitions': definitions,  # Add parsed definitions
             'confidence': self._calculate_confidence(grapheme, english_meaning, ipa)
         }
         
         return clean_entry
+    
+    def _merge_numbered_definitions(self, definition: str) -> list:
+        """
+        Merge numbered definitions (1., 2., 3.) into a list.
+        
+        Args:
+            definition: Definition text that may contain numbered meanings
+            
+        Returns:
+            List of definition objects with number and text
+        """
+        import re
+        
+        # Split on numbered patterns like "1.", "2.", "3."
+        pattern = r'\s*(\d+)\.\s*'
+        parts = re.split(pattern, definition)
+        
+        definitions = []
+        if len(parts) > 2:  # Has numbered definitions
+            # Remove empty first element and pair numbers with definitions
+            parts = [p.strip() for p in parts[1:] if p.strip()]  # Skip first empty part
+            for i in range(0, len(parts), 2):
+                if i + 1 < len(parts):
+                    number = parts[i]
+                    def_text = parts[i + 1].strip()
+                    if def_text and number.isdigit():
+                        definitions.append({
+                            'number': int(number),
+                            'definition': def_text
+                        })
+        
+        if not definitions:
+            # Single definition (no numbers) - remove any leading numbers if present
+            clean_def = re.sub(r'^\s*\d+\.\s*', '', definition).strip()
+            definitions.append({
+                'number': 1,
+                'definition': clean_def
+            })
+        
+        return definitions
     
     def _calculate_confidence(self, grapheme: str, english_meaning: str, ipa: Optional[str]) -> float:
         """

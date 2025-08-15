@@ -1,44 +1,41 @@
 """
-Prompt templates for OCR text processing.
-Simple prompts for extracting dictionary entries from OCR'd text.
+Prompt templates for OCR text processing with Qwen2.5-8B-Instruct.
+Optimized prompts for extracting dictionary entries from OCR'd text.
 """
 
 # Main extraction prompt for OCR text
-EXTRACTION_PROMPT = """You are processing OCR-extracted text from a Kalenjin dictionary page. 
+# Main extraction prompt optimized for Qwen2.5-8B-Instruct
+EXTRACTION_PROMPT = """<|im_start|>system
+You are an expert Kalenjin dictionary digitization assistant. Extract dictionary entries from OCR text with perfect accuracy.
 
-Extract dictionary entries as a clean JSON array. Return ONLY the JSON, no additional text.
+DICTIONARY STRUCTURE:
+- HEADWORDS: Pure Kalenjin words (ak, akwai, ke-al, alamaliet)
+- GRAMMAR: c., p., a., v., n., adj., v.t., v.i., v.itv.
+- IPA: Always in /forward slashes/ like /ák/, /ákwá:y/, /ke:-ál/
+- DEFINITIONS: English meanings, may have numbered variants (1., 2., 3.)
 
-OCR Text:
+EXTRACTION RULES:
+1. Extract ONLY main dictionary entries, skip examples/cross-references
+2. Preserve numbered definitions (1., 2., 3.) for multiple meanings
+3. IPA must be extracted from /forward slashes/
+4. NO numbers in headwords (only in definitions)
+<|im_end|>
+<|im_start|>user
+Extract dictionary entries from this OCR text:
+
 {ocr_text}
 
-CRITICAL REQUIREMENTS:
-1. Your response must be ONLY a valid JSON array - no explanations, comments, or extra text
-2. ALWAYS extract phonetic transcriptions (IPA) when present - this is MANDATORY
-3. Look carefully for pronunciation guides in /slashes/, [brackets], or _underscores_
-4. If no clear phonetic transcription is visible, set ipa to null
-
-Instructions for extraction:
-- Extract clean Kalenjin words as graphemes
-- Extract corresponding English meanings/translations  
-- MANDATORY: Find and extract IPA phonetic transcriptions (usually in /slashes/, [brackets], or _underscores_)
-- Include part of speech markers (v.t., v.i., n., adj., etc.) in the english_meaning
-- Skip headers, page numbers, and non-dictionary content
-
-Output format - return ONLY this JSON structure:
+Return valid JSON array only:
 [
   {{
-    "grapheme": "kalenjin_word",
-    "english_meaning": "english translation with grammar info",
-    "ipa": "/phonetic_transcription/"
+    "grapheme": "headword_only",
+    "english_meaning": "grammar_marker complete_definition_with_numbers",
+    "ipa": "/exact_pronunciation/"
   }}
 ]
-
-REMINDER: Extract phonetic transcriptions whenever they appear in the text. Look for patterns like:
-- /ke:-apus/ 
-- [pronunciation]
-- _phonetic_guide_
-
-JSON ARRAY ONLY:"""
+<|im_end|>
+<|im_start|>assistant
+"""
 
 
 def get_extraction_prompt(ocr_text: str) -> str:

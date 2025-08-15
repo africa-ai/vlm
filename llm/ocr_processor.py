@@ -66,13 +66,13 @@ class OCRProcessor:
     
     def extract_text_from_image(self, image_path: Union[str, Path]) -> str:
         """
-        Extract raw text from image using OCR - copies exactly what it sees
+        Extract raw text from image using OCR optimized for dictionary structure
         
         Args:
             image_path: Path to image file
             
         Returns:
-            Raw text extracted from image (exactly as seen)
+            Raw text extracted from image with structure preserved
         """
         try:
             logger.info(f"Extracting text from: {image_path}")
@@ -80,24 +80,116 @@ class OCRProcessor:
             # Load image
             img = Image.open(image_path)
             
-            # OCR configuration for exact text extraction (no interpretation)
-            # PSM 6: Uniform block of text (good for dictionary pages)
-            # OEM 3: Default OCR Engine Mode (best accuracy)
-            # No character whitelist - extract everything as seen
-            custom_config = r'--oem 3 --psm 6 -c preserve_interword_spaces=1'
+            # Convert to grayscale for better OCR performance
+            if img.mode != 'L':
+                img = img.convert('L')
             
-            # Extract text exactly as OCR sees it
+            # Enhanced OCR configuration for dictionary pages with structure
+            # PSM 6: Uniform block of text (good for dictionary columns)
+            # OEM 1: Neural nets LSTM engine (better accuracy)
+            # Preserve layout and formatting cues
+            # Include numbers for definition numbering (1., 2., etc.)
+            custom_config = (
+                r'--oem 1 --psm 6 '
+                r'-c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+                r'àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿĀāĂăĄąĆćĈĉĊċČčĎďĐđĒēĔĕĖėĘęĚěĜĝĞğĠġĢģĤĥĦħĨĩĪīĬĭĮįİıĲĳĴĵĶķĸĹĺĻļĽľĿŀŁłŃńŅņŇňŉŊŋŌōŎŏŐőŒœŔŕŖŗŘřŚśŜŝŞşŠšŢţŤťŦŧŨũŪūŬŭŮůŰűŲųŴŵŶŷŸŹźŻżŽž'
+                r'0123456789.,;:!?()[]{}/-_=+*|\\\'\" \n\t'
+                r' -c preserve_interword_spaces=1'
+                r' -c textord_tabfind_show_vlines=1'
+                r' -c textord_tabfind_show_tabs=1'
+                r' -c textord_heavy_nr=1'
+            )
+            
+            # First pass: Get the raw OCR text
             raw_text = pytesseract.image_to_string(img, config=custom_config)
             
-            logger.info(f"Extracted {len(raw_text)} characters from {Path(image_path).name}")
-            logger.info(f"Text preview: {raw_text[:200]}...")
+            # Second pass: Try to get more structured output with bbox info if available
+            try:
+                # Get detailed OCR data to help identify structure
+                ocr_data = pytesseract.image_to_data(img, config=custom_config, output_type=pytesseract.Output.DICT)
+                
+                # Process the structured data to improve text layout
+                structured_text = self._process_ocr_structure(raw_text, ocr_data)
+                if structured_text and len(structured_text) > len(raw_text) * 0.8:
+                    raw_text = structured_text
+                    
+            except Exception as e:
+                logger.debug(f"Structured OCR failed, using raw text: {e}")
             
-            # Return raw text without any cleaning or interpretation
+            logger.info(f"Extracted {len(raw_text)} characters from {Path(image_path).name}")
+            logger.info(f"Text preview: {raw_text[:300]}...")
+            
             return raw_text
             
         except Exception as e:
             logger.error(f"OCR extraction failed for {image_path}: {e}")
             return ""
+    
+    def _process_ocr_structure(self, raw_text: str, ocr_data: dict) -> str:
+        """
+        Process OCR data to better preserve dictionary structure
+        
+        Args:
+            raw_text: Raw OCR text
+            ocr_data: Detailed OCR data with bounding boxes
+            
+        Returns:
+            Improved text with better structure
+        """
+        try:
+            # Get text elements with their positions
+            texts = ocr_data.get('text', [])
+            confs = ocr_data.get('conf', [])
+            lefts = ocr_data.get('left', [])
+            tops = ocr_data.get('top', [])
+            widths = ocr_data.get('width', [])
+            heights = ocr_data.get('height', [])
+            
+            # Filter out low-confidence and empty text
+            elements = []
+            for i, text in enumerate(texts):
+                if text.strip() and confs[i] > 30:  # Confidence threshold
+                    elements.append({
+                        'text': text,
+                        'conf': confs[i],
+                        'left': lefts[i],
+                        'top': tops[i],
+                        'width': widths[i],
+                        'height': heights[i],
+                        'right': lefts[i] + widths[i],
+                        'bottom': tops[i] + heights[i]
+                    })
+            
+            # Sort by position (top to bottom, left to right)
+            elements.sort(key=lambda x: (x['top'], x['left']))
+            
+            # Reconstruct text with better spacing and line breaks
+            result_lines = []
+            current_line = []
+            current_top = -1
+            line_height_threshold = 10  # Pixels
+            
+            for elem in elements:
+                # Check if this element is on a new line
+                if current_top == -1 or abs(elem['top'] - current_top) > line_height_threshold:
+                    # New line
+                    if current_line:
+                        result_lines.append(' '.join(current_line))
+                    current_line = [elem['text']]
+                    current_top = elem['top']
+                else:
+                    # Same line
+                    current_line.append(elem['text'])
+            
+            # Add the last line
+            if current_line:
+                result_lines.append(' '.join(current_line))
+            
+            return '\n'.join(result_lines)
+            
+        except Exception as e:
+            logger.debug(f"Structure processing failed: {e}")
+            return raw_text
     
     def process_text_with_llm(self, raw_text: str, image_path: str = "") -> Dict[str, Any]:
         """
@@ -121,8 +213,15 @@ class OCRProcessor:
         try:
             logger.info("Sending OCR text to LLM for parsing...")
             
-            # Use our clean parser to process the OCR text
-            entries = self.parser.parse_ocr_text(raw_text, self.client)
+            # Pre-filter OCR text to reduce token count
+            cleaned_text = self._prefilter_ocr_text(raw_text)
+            
+            # If text is very long, chunk it
+            if len(cleaned_text) > 3000:  # ~750 tokens roughly
+                return self._process_text_in_chunks(cleaned_text, image_path)
+            
+            # Single fast processing for smaller texts
+            entries = self.parser.parse_ocr_text(cleaned_text, self.client)
             
             logger.info(f"LLM extracted {len(entries)} entries from OCR text")
             
@@ -130,7 +229,7 @@ class OCRProcessor:
                 "image_path": image_path,
                 "entries": entries,
                 "raw_text": raw_text,
-                "method": "OCR + LLM",
+                "method": "OCR + LLM (Optimized)",
                 "status": "success",
                 "timestamp": datetime.now().isoformat()
             }
@@ -292,6 +391,62 @@ class OCRProcessor:
         logger.info(f"   📄 Results saved to: {self.live_results_file}")
         
         return results
+
+    def _prefilter_ocr_text(self, text: str) -> str:
+        """
+        Pre-filter OCR text to reduce token count and improve processing speed
+        """
+        lines = text.split('\n')
+        
+        # Keep only lines that likely contain dictionary entries
+        filtered_lines = []
+        for line in lines:
+            line = line.strip()
+            if len(line) < 3:  # Skip very short lines
+                continue
+            if line.lower().startswith(('page', 'nandi', 'english')):  # Skip headers
+                continue
+            if len(line.split()) > 20:  # Skip very long lines (likely examples)
+                continue
+            if any(pattern in line.lower() for pattern in ['/ke:', '/ak', '/al', 'v.', 'n.', 'a.', 'c.']):
+                filtered_lines.append(line)
+            elif len(line.split()) <= 10 and any(c.islower() for c in line):  # Potential dictionary entry
+                filtered_lines.append(line)
+        
+        return '\n'.join(filtered_lines)
+
+    def _process_text_in_chunks(self, text: str, image_path: str) -> Dict[str, Any]:
+        """
+        Process large OCR text in chunks for faster processing
+        """
+        lines = text.split('\n')
+        chunk_size = 50  # lines per chunk
+        all_entries = []
+        
+        chunks = [lines[i:i + chunk_size] for i in range(0, len(lines), chunk_size)]
+        
+        logger.info(f"Processing {len(chunks)} chunks for faster performance...")
+        
+        for i, chunk in enumerate(chunks):
+            chunk_text = '\n'.join(chunk)
+            if not chunk_text.strip():
+                continue
+                
+            try:
+                entries = self.parser.parse_ocr_text(chunk_text, self.client)
+                all_entries.extend(entries)
+                logger.info(f"Chunk {i+1}/{len(chunks)}: {len(entries)} entries")
+            except Exception as e:
+                logger.warning(f"Chunk {i+1} failed: {e}")
+                continue
+        
+        return {
+            "image_path": image_path,
+            "entries": all_entries,
+            "method": "OCR + LLM (Chunked)",
+            "status": "success",
+            "timestamp": datetime.now().isoformat()
+        }
 
 
 def create_ocr_processor(config: Optional[VLMConfig] = None, 

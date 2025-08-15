@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 """
-vLLM Server Startup Script for NVIDIA Cosmos-Reason1-7B
+vLLM Server Startup Script for Qwen/Qwen3-8B
+Optimized for text processing and dictionary extraction
 """
 
 import argparse
@@ -53,7 +54,7 @@ except ImportError as e:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Start vLLM server for Cosmos-Reason1-7B")
+    parser = argparse.ArgumentParser(description="Start vLLM server for Qwen/Qwen3-8B")
     
     # Server configuration
     parser.add_argument("--host", default="0.0.0.0", help="Server host")
@@ -61,7 +62,7 @@ def main():
     parser.add_argument("--workers", type=int, default=1, help="Number of workers")
     
     # Model configuration
-    parser.add_argument("--model", default="nvidia/Cosmos-Reason1-7B", 
+    parser.add_argument("--model", default="Qwen/Qwen3-8B", 
                        help="Model name or path")
     parser.add_argument("--tensor-parallel-size", type=int, default=1,
                        help="Tensor parallel size for multi-GPU")

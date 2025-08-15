@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 class VLLMServer:
-    """vLLM Server wrapper for Cosmos-Reason1-7B"""
+    """vLLM Server wrapper for Qwen/Qwen3-8B"""
     
     def __init__(self, config: VLLMServerConfig):
         self.config = config
@@ -101,8 +101,8 @@ class VLLMServer:
     def create_app(self) -> FastAPI:
         """Create FastAPI application"""
         app = FastAPI(
-            title="Cosmos-Reason1-7B vLLM Server",
-            description="OpenAI-compatible API for NVIDIA Cosmos-Reason1-7B Vision Language Model",
+            title="Qwen/Qwen3-8B vLLM Server",
+            description="OpenAI-compatible API for NVIDIA Qwen/Qwen3-8B Vision Language Model",
             version="1.0.0",
             lifespan=self.lifespan
         )

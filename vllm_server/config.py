@@ -1,6 +1,6 @@
 """
-vLLM Server Configuration for NVIDIA Cosmos-Reason1-7B
-Handles model serving with optimized inference for visual language model processing
+vLLM Server Configuration for Qwen2.5-8B-Instruct
+Handles model serving with optimized inference for text processing and dictionary extraction
 """
 
 import os
@@ -11,10 +11,10 @@ from pathlib import Path
 
 @dataclass
 class VLLMServerConfig:
-    """Configuration for vLLM server hosting Cosmos-Reason1-7B"""
+    """Configuration for vLLM server hosting Qwen2.5-8B-Instruct"""
     
     # Model configuration
-    model_name: str = "nvidia/Cosmos-Reason1-7B"
+    model_name: str = "Qwen/Qwen3-8B"
     model_path: Optional[str] = None  # Local model path if available
     
     # Server configuration
@@ -22,16 +22,15 @@ class VLLMServerConfig:
     port: int = 8000
     workers: int = 1
     
-    # vLLM configuration
+    # vLLM configuration - optimized for Qwen2.5-8B
     tensor_parallel_size: int = 1
     gpu_memory_utilization: float = 0.85
-    max_model_len: int = 4096
-    max_num_seqs: int = 4
+    max_model_len: int = 32768  # Qwen2.5 supports 32K context
+    max_num_seqs: int = 8  # Increased for better throughput
     
-    # Vision model specific
-    image_input_type: str = "pixel_values"
-    image_token_id: int = 0
-    image_input_shape: str = "1,3,224,224"
+    # Text model optimization (no vision components needed)
+    enforce_eager: bool = False  # Allow CUDA graphs for speed
+    disable_custom_all_reduce: bool = False
     
     # Performance tuning
     disable_log_stats: bool = False
@@ -48,7 +47,7 @@ class VLLMServerConfig:
 
     # API configuration
     api_key: Optional[str] = None
-    served_model_name: Optional[str] = "cosmos-reason-vlm"
+    served_model_name: Optional[str] = "Qwen/Qwen3-8B"
 
     # Resource limits
     max_concurrent_requests: int = 10
@@ -58,7 +57,7 @@ class VLLMServerConfig:
     def from_env(cls) -> "VLLMServerConfig":
         """Load configuration from environment variables"""
         return cls(
-            model_name=os.getenv("VLLM_MODEL_NAME", "nvidia/Cosmos-Reason1-7B"),
+            model_name=os.getenv("VLLM_MODEL_NAME", "Qwen/Qwen3-8B"),
             model_path=os.getenv("VLLM_MODEL_PATH"),
             host=os.getenv("VLLM_HOST", "localhost"),
             port=int(os.getenv("VLLM_PORT", "8000")),
@@ -116,10 +115,10 @@ class VLLMServerConfig:
 
 def create_vllm_env_file(config_path: str = ".env.vllm"):
     """Create environment file with vLLM configuration"""
-    env_content = """# vLLM Server Configuration for Cosmos-Reason1-7B
+    env_content = """# vLLM Server Configuration for Qwen2.5-8B-Instruct
 
 # Model Configuration
-VLLM_MODEL_NAME=nvidia/Cosmos-Reason1-7B
+VLLM_MODEL_NAME=Qwen/Qwen2.5-8B-Instruct
 # VLLM_MODEL_PATH=/path/to/local/model  # Optional: local model path
 
 # Server Configuration

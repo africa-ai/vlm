@@ -46,10 +46,11 @@ class VLLMClient:
             logger.error(f"Health check failed: {e}")
             return False
     
-    async def complete_text(self, prompt: str, max_tokens: int = 2000, 
-                          temperature: float = 0.1) -> Dict[str, Any]:
+    async def complete_text(self, prompt: str, max_tokens: int = 1500,  # Reduced from 2000
+                          temperature: float = 0.0) -> Dict[str, Any]:  # Set to 0 for faster generation
         """
         Complete text using vLLM server via chat completions endpoint
+        Optimized for A10G performance
         
         Args:
             prompt: Text prompt for completion
@@ -63,15 +64,19 @@ class VLLMClient:
             raise RuntimeError("Client session not initialized")
         
         try:
-            # Use chat completions format (OpenAI compatible)
+            # Optimized payload for speed
             payload = {
-                "model": "nvidia/Cosmos-Reason1-7B-Instruct",
+                "model": "Qwen/Qwen3-8B",
                 "messages": [
                     {"role": "user", "content": prompt}
                 ],
                 "max_tokens": max_tokens,
                 "temperature": temperature,
-                "stop": ["</json>", "\n\n---", "```"]
+                "top_p": 0.9,  # Add for faster sampling
+                "frequency_penalty": 0.1,  # Reduce repetition
+                "stop": ["</json>", "\n\n---", "```", "Human:", "Assistant:"],
+                # Performance optimizations
+                "stream": False,  # Ensure no streaming overhead
             }
             
             async with self.session.post(
@@ -96,7 +101,7 @@ class VLLMClient:
                     return {
                         "status": "success",
                         "completion": completion,
-                        "model": result.get("model", "nvidia/Cosmos-Reason1-7B-Instruct"),
+                        "model": result.get("model", "Qwen/Qwen3-8B"),
                         "usage": result.get("usage", {}),
                         "full_response": result
                     }
@@ -130,9 +135,9 @@ class SyncVLLMClient:
         
         return asyncio.run(_check())
     
-    def complete_text(self, prompt: str, max_tokens: int = 2000, 
-                     temperature: float = 0.1) -> Dict[str, Any]:
-        """Synchronous text completion"""
+    def complete_text(self, prompt: str, max_tokens: int = 1500,  # Reduced from 2000
+                     temperature: float = 0.0) -> Dict[str, Any]:  # Set to 0 for faster generation
+        """Synchronous text completion - optimized for speed"""
         async def _complete():
             async with self.client as client:
                 return await client.complete_text(prompt, max_tokens, temperature)
