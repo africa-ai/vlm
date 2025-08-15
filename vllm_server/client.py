@@ -65,8 +65,8 @@ class VLLMClient:
                 "max_tokens": max_tokens,
                 "temperature": temperature,
                 "top_p": 0.9,
-                "frequency_penalty": 0.1,
-                "stop": ["</json>", "\n\n---", "```", "Human:", "Assistant:"],
+                "frequency_penalty": 0.0,  # Reduced for speed
+                "stop": ["</json>", "\n\n"],  # Fewer stop tokens
                 "stream": False,
                 "enable_thinking": False,  # Disable Qwen3 thinking mode for speed
             }
@@ -79,7 +79,7 @@ class VLLMClient:
                 f"{self.server_url}/v1/chat/completions",
                 json=payload,
                 headers=self.headers,
-                timeout=aiohttp.ClientTimeout(total=60)  # Reduced from 120
+                timeout=aiohttp.ClientTimeout(total=30)  # Reduced to 30 seconds
             ) as response:
                 
                 response_text = await response.text()

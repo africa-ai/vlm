@@ -198,7 +198,7 @@ class OCRProcessor:
             logger.info(f"Cleaned text length: {len(cleaned_text)} characters")
             
             # If text is very long, chunk it to prevent timeouts
-            if len(cleaned_text) > 2500:  # Reduced threshold for timeout prevention
+            if len(cleaned_text) > 2000:  # Further reduced threshold for timeout prevention
                 logger.info("Text is long, using chunked processing...")
                 return self._process_text_in_chunks(cleaned_text, image_path)
             
@@ -457,7 +457,7 @@ class OCRProcessor:
         lines = text.split('\n')
         current_chunk = []
         chunk_char_count = 0
-        max_chunk_chars = 2000  # Conservative limit for timeout prevention
+        max_chunk_chars = 1000  # Much smaller chunks for speed
         
         for line in lines:
             line = line.strip()
@@ -477,7 +477,7 @@ class OCRProcessor:
             chunk_char_count += len(line) + 1  # +1 for newline
             
             # Natural break at headwords if chunk is substantial
-            if is_headword and chunk_char_count > 1500:
+            if is_headword and chunk_char_count > 800:
                 chunks.append('\n'.join(current_chunk))
                 current_chunk = []
                 chunk_char_count = 0

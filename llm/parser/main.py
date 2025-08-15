@@ -156,8 +156,8 @@ class DictionaryParser:
             # Process with vLLM
             response = vllm_client.complete_text(
                 prompt=full_prompt,
-                max_tokens=4000,
-                temperature=0.1
+                max_tokens=1000,  # Reduced for speed
+                temperature=0.0  # Set to 0 for deterministic, fast generation
             )
             
             if not response or response.get('status') != 'success':

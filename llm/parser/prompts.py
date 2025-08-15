@@ -3,21 +3,12 @@ Prompts for Kalenjin Dictionary Extraction
 Optimized for Qwen3-8B with compact, effective prompts to prevent timeouts
 """
 
-# Compact extraction prompt optimized for speed and accuracy
-EXTRACTION_PROMPT = """Extract Kalenjin dictionary entries. Return JSON only.
+# Ultra-compact extraction prompt for speed
+EXTRACTION_PROMPT = """Extract dictionary entries as JSON:
 
-PATTERNS:
-• HEADWORDS: abuset, ach, aget (standalone words)
-• GRAMMAR: n., v., v.caus., v.t., pn., adv., i., p.
-• IPA: /_abus-é:t/, /_a:c/, /_kw-aké:t/
-• SKIP example sentences: "Koaget tuga. The cattle grazed. /ipa/"
-
-TEXT:
 {ocr_text}
 
-FORMAT: [{{"grapheme": "word", "grammar": "n.", "ipa": "/ipa/", "definition": "meaning"}}]
-
-JSON:"""
+JSON: [{{"word": "headword", "pos": "n.", "ipa": "/ipa/", "def": "meaning"}}]"""
 
 # Compact sentence extraction prompt
 SENTENCE_EXTRACTION_PROMPT = """Extract example sentences only. Return JSON only.
