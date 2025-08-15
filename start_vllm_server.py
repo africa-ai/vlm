@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """
-vLLM Server Startup Script for Qwen/Qwen3-8B
-Optimized for text processing and dictionary extraction
+vLLM Server Startup Script for Qwen3-8B
+Optimized for fast dictionary extraction (thinking disabled)
 """
 
 import argparse
@@ -54,7 +54,7 @@ except ImportError as e:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Start vLLM server for Qwen/Qwen3-8B")
+    parser = argparse.ArgumentParser(description="Start vLLM server for Qwen3-8B")
     
     # Server configuration
     parser.add_argument("--host", default="0.0.0.0", help="Server host")
@@ -68,8 +68,8 @@ def main():
                        help="Tensor parallel size for multi-GPU")
     parser.add_argument("--gpu-memory-utilization", type=float, default=0.85,
                        help="GPU memory utilization fraction")
-    parser.add_argument("--max-model-len", type=int, default=4096,
-                       help="Maximum model sequence length")
+    parser.add_argument("--max-model-len", type=int, default=32768,
+                       help="Maximum model sequence length (32K for Qwen3)")
     parser.add_argument("--max-num-seqs", type=int, default=4,
                        help="Maximum number of sequences to process in parallel")
     
@@ -91,7 +91,7 @@ def main():
     
     # API configuration
     parser.add_argument("--api-key", help="API key for authentication")
-    parser.add_argument("--served-model-name", default="cosmos-reason-vlm",
+    parser.add_argument("--served-model-name", default="qwen3-8b-instruct",
                        help="Model name to serve in API")
     
     # Environment setup

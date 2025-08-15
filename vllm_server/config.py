@@ -1,6 +1,6 @@
 """
-vLLM Server Configuration for Qwen2.5-8B-Instruct
-Handles model serving with optimized inference for text processing and dictionary extraction
+vLLM Server Configuration for Qwen3-8B
+Handles model serving with optimized inference for dictionary extraction (thinking disabled)
 """
 
 import os
@@ -11,7 +11,7 @@ from pathlib import Path
 
 @dataclass
 class VLLMServerConfig:
-    """Configuration for vLLM server hosting Qwen2.5-8B-Instruct"""
+    """Configuration for vLLM server hosting Qwen3-8B (thinking disabled)"""
     
     # Model configuration
     model_name: str = "Qwen/Qwen3-8B"
@@ -22,10 +22,10 @@ class VLLMServerConfig:
     port: int = 8000
     workers: int = 1
     
-    # vLLM configuration - optimized for Qwen2.5-8B
+    # vLLM configuration - optimized for Qwen3-8B
     tensor_parallel_size: int = 1
     gpu_memory_utilization: float = 0.85
-    max_model_len: int = 32768  # Qwen2.5 supports 32K context
+    max_model_len: int = 32768  # Qwen3 supports 32K context natively
     max_num_seqs: int = 8  # Increased for better throughput
     
     # Text model optimization (no vision components needed)

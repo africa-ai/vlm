@@ -101,8 +101,8 @@ class VLLMServer:
     def create_app(self) -> FastAPI:
         """Create FastAPI application"""
         app = FastAPI(
-            title="Qwen/Qwen3-8B vLLM Server",
-            description="OpenAI-compatible API for NVIDIA Qwen/Qwen3-8B Vision Language Model",
+            title="Qwen3-8B vLLM Server",
+            description="OpenAI-compatible API for Qwen3-8B (thinking disabled for speed)",
             version="1.0.0",
             lifespan=self.lifespan
         )

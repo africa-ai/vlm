@@ -64,7 +64,7 @@ class VLLMClient:
             raise RuntimeError("Client session not initialized")
         
         try:
-            # Optimized payload for speed
+            # Optimized payload for speed with thinking disabled
             payload = {
                 "model": "Qwen/Qwen3-8B",
                 "messages": [
@@ -77,6 +77,7 @@ class VLLMClient:
                 "stop": ["</json>", "\n\n---", "```", "Human:", "Assistant:"],
                 # Performance optimizations
                 "stream": False,  # Ensure no streaming overhead
+                "enable_thinking": False,  # Disable Qwen3 thinking mode for speed
             }
             
             async with self.session.post(

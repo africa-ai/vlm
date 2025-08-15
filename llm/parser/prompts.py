@@ -1,41 +1,31 @@
 """
-Prompt templates for OCR text processing with Qwen2.5-8B-Instruct.
-Optimized prompts for extracting dictionary entries from OCR'd text.
+Prompt templates for OCR text processing with Qwen3-8B.
+Optimized for fast, direct extraction (thinking disabled).
 """
 
 # Main extraction prompt for OCR text
-# Main extraction prompt optimized for Qwen2.5-8B-Instruct
-EXTRACTION_PROMPT = """<|im_start|>system
-You are an expert Kalenjin dictionary digitization assistant. Extract dictionary entries from OCR text with perfect accuracy.
+# Main extraction prompt optimized for Qwen3-8B (thinking disabled)
+EXTRACTION_PROMPT = """Extract dictionary entries from OCR text. Return only JSON.
 
 DICTIONARY STRUCTURE:
-- HEADWORDS: Pure Kalenjin words (ak, akwai, ke-al, alamaliet)
-- GRAMMAR: c., p., a., v., n., adj., v.t., v.i., v.itv.
-- IPA: Always in /forward slashes/ like /ák/, /ákwá:y/, /ke:-ál/
-- DEFINITIONS: English meanings, may have numbered variants (1., 2., 3.)
+- HEADWORDS: Kalenjin words (ak, akwai, ke-al) - NO NUMBERS
+- GRAMMAR: c., p., a., v., n., adj., v.t., v.i.
+- IPA: In /forward slashes/ like /ák/, /ákwá:y/
+- DEFINITIONS: English meanings, preserve numbers (1., 2., 3.)
 
-EXTRACTION RULES:
-1. Extract ONLY main dictionary entries, skip examples/cross-references
-2. Preserve numbered definitions (1., 2., 3.) for multiple meanings
-3. IPA must be extracted from /forward slashes/
-4. NO numbers in headwords (only in definitions)
-<|im_end|>
-<|im_start|>user
-Extract dictionary entries from this OCR text:
-
+OCR TEXT:
 {ocr_text}
 
-Return valid JSON array only:
-[
-  {{
-    "grapheme": "headword_only",
-    "english_meaning": "grammar_marker complete_definition_with_numbers",
-    "ipa": "/exact_pronunciation/"
-  }}
-]
-<|im_end|>
-<|im_start|>assistant
-"""
+RULES:
+1. Extract main entries only, skip examples
+2. Headwords = pure Kalenjin (no numbers)
+3. Preserve numbered definitions (1. fat. 2. rich.)
+4. IPA must be in /slashes/
+
+JSON FORMAT:
+[{{"grapheme": "headword", "english_meaning": "grammar + definition", "ipa": "/pronunciation/"}}]
+
+JSON ONLY:"""
 
 
 def get_extraction_prompt(ocr_text: str) -> str:
