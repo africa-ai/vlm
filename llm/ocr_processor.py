@@ -172,6 +172,36 @@ class OCRProcessor:
         
         return result
     
+    def process_images(self, image_paths: List[Union[str, Path]], 
+                      output_dir: Optional[str] = None,
+                      max_workers: int = 4, 
+                      batch_size: int = 8) -> List[Dict[str, Any]]:
+        """
+        Process multiple images with OCR + LLM pipeline (main interface)
+        
+        Args:
+            image_paths: List of image file paths
+            output_dir: Output directory for results (optional)
+            max_workers: Number of concurrent workers (not used in current implementation)
+            batch_size: Batch size for processing (not used in current implementation)
+            
+        Returns:
+            List of processing results
+        """
+        # Set output directory if provided
+        if output_dir:
+            self.output_dir = Path(output_dir)
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Update live result files for new output directory
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.live_results_file = self.output_dir / f"ocr_results_{timestamp}.jsonl"
+            self.live_entries_file = self.output_dir / f"ocr_entries_{timestamp}.json"
+            logger.info(f"Updated live results location: {self.live_results_file}")
+        
+        # Use batch processing method
+        return self.batch_process_images(image_paths)
+    
     def save_live_result(self, result: Dict[str, Any]) -> None:
         """Save individual processing result immediately"""
         try:
