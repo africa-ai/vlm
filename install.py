@@ -28,8 +28,8 @@ def install_tesseract():
     if system == "linux":
         # Linux (Ubuntu/Debian)
         try:
-            subprocess.run(['sudo', 'apt-get', 'update'], check=True)
-            subprocess.run(['sudo', 'apt-get', 'install', '-y', 'tesseract-ocr'], check=True)
+            subprocess.run([ 'apt-get', 'update'], check=True)
+            subprocess.run([ 'apt-get', 'install', '-y', 'tesseract-ocr'], check=True)
             print("✅ Tesseract installed via apt-get")
             return True
         except subprocess.CalledProcessError:
