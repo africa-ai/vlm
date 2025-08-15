@@ -150,7 +150,22 @@ class SyncVLLMClient:
             async with self.client as client:
                 return await client.health_check()
         
-        return asyncio.run(_check())
+        # Handle both cases: running in event loop and not
+        try:
+            loop = asyncio.get_running_loop()
+            # We're in an event loop, need to use different approach
+            import concurrent.futures
+            
+            def run_in_thread():
+                return asyncio.run(_check())
+            
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(run_in_thread)
+                return future.result(timeout=30)  # 30 second timeout
+                
+        except RuntimeError:
+            # No running event loop, safe to use asyncio.run()
+            return asyncio.run(_check())
     
     def complete_text(self, prompt: str, max_tokens: int = 1500,  # Reduced from 2000
                      temperature: float = 0.0) -> Dict[str, Any]:  # Set to 0 for faster generation
@@ -159,7 +174,24 @@ class SyncVLLMClient:
             async with self.client as client:
                 return await client.complete_text(prompt, max_tokens, temperature)
         
-        return asyncio.run(_complete())
+        # Handle both cases: running in event loop and not
+        try:
+            loop = asyncio.get_running_loop()
+            # We're in an event loop, need to use different approach
+            import concurrent.futures
+            import threading
+            
+            # Run in a separate thread to avoid event loop conflicts
+            def run_in_thread():
+                return asyncio.run(_complete())
+            
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(run_in_thread)
+                return future.result(timeout=60)  # 60 second timeout
+                
+        except RuntimeError:
+            # No running event loop, safe to use asyncio.run()
+            return asyncio.run(_complete())
 
 
 # Convenience function for testing
