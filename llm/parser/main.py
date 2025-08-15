@@ -8,7 +8,7 @@ import logging
 import re
 from typing import List, Dict, Any, Optional
 
-from .prompts import get_extraction_prompt, get_system_prompt
+from .prompts import get_extraction_prompt, get_sentence_extraction_prompt, get_system_prompt
 
 logger = logging.getLogger(__name__)
 

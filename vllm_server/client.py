@@ -56,9 +56,9 @@ class VLLMClient:
             raise RuntimeError("Client session not initialized")
         
         try:
-            # Optimized payload for speed with thinking disabled
+            # Optimized payload for speed with correct model name
             payload = {
-                "model": "Qwen/Qwen3-8B",
+                "model": "qwen3-8b-instruct",  # Use correct model name from server
                 "messages": [
                     {"role": "user", "content": prompt}
                 ],

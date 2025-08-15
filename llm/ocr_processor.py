@@ -85,7 +85,7 @@ class OCRProcessor:
             
             # Configure Tesseract path for Windows
             import pytesseract
-            pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+            
             
             # Load image
             img = Image.open(image_path)
@@ -197,8 +197,8 @@ class OCRProcessor:
             cleaned_text = self._prefilter_ocr_text(raw_text)
             logger.info(f"Cleaned text length: {len(cleaned_text)} characters")
             
-            # If text is very long, chunk it
-            if len(cleaned_text) > 3000:  # ~750 tokens roughly
+            # If text is very long, chunk it to prevent timeouts
+            if len(cleaned_text) > 2500:  # Reduced threshold for timeout prevention
                 logger.info("Text is long, using chunked processing...")
                 return self._process_text_in_chunks(cleaned_text, image_path)
             
@@ -447,33 +447,82 @@ class OCRProcessor:
 
     def _process_text_in_chunks(self, text: str, image_path: str) -> Dict[str, Any]:
         """
-        Process large OCR text in chunks for faster processing
+        Process large OCR text in chunks to prevent timeouts
+        Now handles both dictionary entries and example sentences
         """
+        import re
+        
+        # Split text into logical chunks based on entries/headwords
+        chunks = []
         lines = text.split('\n')
-        chunk_size = 50  # lines per chunk
+        current_chunk = []
+        chunk_char_count = 0
+        max_chunk_chars = 2000  # Conservative limit for timeout prevention
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            # Check if line starts a new entry (headword pattern)
+            is_headword = bool(re.match(r'^[a-z\-]{3,12}\s+(n\.|v\.|v\.caus\.|v\.t\.|pn\.|adv\.|i\.|p\.)', line))
+            
+            # If adding this line would exceed limit and we have content, start new chunk
+            if chunk_char_count + len(line) > max_chunk_chars and current_chunk:
+                chunks.append('\n'.join(current_chunk))
+                current_chunk = []
+                chunk_char_count = 0
+            
+            current_chunk.append(line)
+            chunk_char_count += len(line) + 1  # +1 for newline
+            
+            # Natural break at headwords if chunk is substantial
+            if is_headword and chunk_char_count > 1500:
+                chunks.append('\n'.join(current_chunk))
+                current_chunk = []
+                chunk_char_count = 0
+        
+        # Add final chunk
+        if current_chunk:
+            chunks.append('\n'.join(current_chunk))
+        
+        logger.info(f"Split text into {len(chunks)} chunks (max {max_chunk_chars} chars each)")
+        
+        # Process each chunk for both entries and examples
         all_entries = []
+        all_examples = []
         
-        chunks = [lines[i:i + chunk_size] for i in range(0, len(lines), chunk_size)]
-        
-        logger.info(f"Processing {len(chunks)} chunks for faster performance...")
-        
-        for i, chunk in enumerate(chunks):
-            chunk_text = '\n'.join(chunk)
+        for i, chunk_text in enumerate(chunks):
             if not chunk_text.strip():
                 continue
                 
+            logger.info(f"Processing chunk {i+1}/{len(chunks)} ({len(chunk_text)} chars)")
+            
             try:
-                entries = self.parser.parse_ocr_text(chunk_text, self.client)
-                all_entries.extend(entries)
-                logger.info(f"Chunk {i+1}/{len(chunks)}: {len(entries)} entries")
+                # Parse chunk with enhanced parser (handles both entries and examples)
+                result = self.parser.parse_ocr_text(chunk_text, self.client)
+                
+                # Extract entries and examples from result
+                chunk_entries = result.get("entries", [])
+                chunk_examples = result.get("examples", [])
+                
+                all_entries.extend(chunk_entries)
+                all_examples.extend(chunk_examples)
+                
+                logger.info(f"Chunk {i+1}: {len(chunk_entries)} entries, {len(chunk_examples)} examples")
+                
             except Exception as e:
                 logger.warning(f"Chunk {i+1} failed: {e}")
                 continue
         
+        logger.info(f"Total: {len(all_entries)} entries, {len(all_examples)} examples from chunked processing")
+        
         return {
             "image_path": image_path,
             "entries": all_entries,
-            "method": "OCR + LLM (Chunked)",
+            "examples": all_examples,
+            "raw_text": text,
+            "method": "OCR + LLM (Chunked for Timeout Prevention)",
             "status": "success",
             "timestamp": datetime.now().isoformat()
         }
